@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+<title>Field Hockey Manager</title>
+<link rel="stylesheet" href="css/styles.css" />
+</head>
+<body>
+<header class="app-header">
+  <h1>🏑 Field Hockey Manager</h1>
+  <p class="subtitle">Rolling-sub rotation builder — runs entirely in your browser</p>
+</header>
+
+<nav class="tabs" role="tablist">
+  <button class="tab-btn active" data-tab="squad" role="tab" aria-selected="true">① Squad</button>
+  <button class="tab-btn" data-tab="setup" role="tab" aria-selected="false">② Match setup</button>
+  <button class="tab-btn" data-tab="sheet" role="tab" aria-selected="false">③ Sub sheet</button>
+</nav>
+
+<main>
+  <!-- ────────────────── TAB 1: SQUAD ────────────────── -->
+  <section id="tab-squad" class="tab-panel active">
+    <h2>Today's squad</h2>
+    <div class="add-player-row">
+      <input id="new-player-name" type="text" placeholder="e.g. Tobi Smith" />
+      <button id="add-player-btn" class="btn primary">➕ Add</button>
+    </div>
+    <div class="button-row">
+      <button id="load-test-squad-btn" class="btn">Load 16-player test squad</button>
+      <button id="clear-squad-btn" class="btn danger-outline">Clear squad</button>
+    </div>
+    <p id="squad-empty-msg" class="info-box">Add players or load the test squad to get started.</p>
+    <p id="squad-count" class="caption"></p>
+    <div id="squad-list" class="squad-list"></div>
+  </section>
+
+  <!-- ────────────────── TAB 2: MATCH SETUP ────────────────── -->
+  <section id="tab-setup" class="tab-panel">
+    <h2>Match length &amp; bench rules</h2>
+    <div class="grid-4">
+      <label>Periods
+        <input id="periods-input" type="number" min="1" max="4" step="1" />
+      </label>
+      <label>Mins / period
+        <input id="perlen-input" type="number" min="5" max="45" step="1" />
+      </label>
+      <label>Max bench (min)
+        <input id="maxoff-input" type="number" min="1" max="30" step="1" />
+        <small>No player sits longer than this between stints. Hard limit.</small>
+      </label>
+      <label>Target break (min)
+        <input id="targetoff-input" type="number" min="1" max="15" step="1" />
+        <small>The break length the rotation aims for when it can.</small>
+      </label>
+    </div>
+    <p class="caption" id="match-length-caption"></p>
+
+    <hr />
+    <h2>Positions</h2>
+    <p class="caption">Rename, add or remove positions to match how <em>your</em> team lines up and
+      subs. Set how many play at once, and whether it <strong>rolls</strong> (frequent rolling subs)
+      or <strong>splits</strong> evenly (e.g. keepers).</p>
+    <div id="positions-table" class="editable-table"></div>
+    <button id="add-position-btn" class="btn">➕ Add position</button>
+    <p class="caption" id="total-on-field-caption"></p>
+
+    <hr />
+    <h2>Match-day roster &amp; player rules</h2>
+    <p class="caption">Tick who's available, assign a position, then tune individuals:
+      <strong>Max min</strong> caps an injured/load-managed player, <strong>Weight</strong> gives a
+      key player a bigger share of playing time (1 = normal, higher = more), <strong>Lock</strong>
+      keeps an iron player on the whole match.</p>
+    <p id="roster-empty-msg" class="info-box">Add players in the Squad tab first.</p>
+    <div id="roster-table" class="roster-table"></div>
+  </section>
+
+  <!-- ────────────────── TAB 3: SUB SHEET ────────────────── -->
+  <section id="tab-sheet" class="tab-panel">
+    <div class="no-print">
+      <h2>Rotation</h2>
+      <button id="generate-btn" class="btn primary full-width">⚡ Generate rotation</button>
+      <p id="generate-error" class="error-box" hidden></p>
+    </div>
+
+    <p id="sheet-empty-msg" class="info-box">Set up your squad and match, then hit
+      <strong>Generate rotation</strong>.</p>
+
+    <div id="sheet-results" hidden>
+      <p id="sanity-banner" class="no-print"></p>
+
+      <div id="gantt-container" class="gantt-container"></div>
+
+      <div class="results-grid">
+        <div>
+          <h3>Minutes played</h3>
+          <div id="minutes-table"></div>
+        </div>
+        <div>
+          <h3>Sub timeline</h3>
+          <div id="timeline-table"></div>
+        </div>
+      </div>
+
+      <div class="button-row no-print">
+        <button id="export-minutes-csv-btn" class="btn">⬇ Export minutes (CSV)</button>
+        <button id="export-timeline-csv-btn" class="btn">⬇ Export sub timeline (CSV)</button>
+        <button id="print-btn" class="btn">🖨 Print / Save as PDF</button>
+      </div>
+
+      <hr class="no-print" />
+      <details class="no-print">
+        <summary>✏️ Manual editor — tweak any player's stints</summary>
+        <p class="caption">Edit start/end minutes, delete a stint, or add one. Changes apply
+          immediately.</p>
+        <label>Player
+          <select id="manual-player-select"></select>
+        </label>
+        <div id="manual-segments"></div>
+        <div class="button-row">
+          <button id="manual-add-stint-btn" class="btn">➕ Add stint</button>
+          <button id="manual-apply-btn" class="btn primary">💾 Apply edits</button>
+        </div>
+      </details>
+    </div>
+  </section>
+</main>
+
+<footer class="app-footer no-print">
+  <p>Data is stored only in this browser (localStorage) — nothing is sent anywhere.</p>
+</footer>
+
+<script type="module" src="js/main.js"></script>
+</body>
+</html>
