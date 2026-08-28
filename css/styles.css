@@ -253,6 +253,7 @@ label small { font-weight: 400; color: var(--muted); }
 }
 .gantt-axis { position: relative; height: 20px; margin-left: 130px; border-bottom: 1px solid var(--border); }
 .gantt-axis span { position: absolute; top: 0; font-size: 11px; color: var(--muted); font-weight: 600; }
+.gantt-axis span.axis-end { transform: translateX(-100%); }
 .gantt-pos-label {
   font-size: 12px;
   font-weight: 800;
@@ -332,21 +333,53 @@ table.data-table tbody tr:hover { background: var(--info-bg); }
 
 @media print {
   @page { size: landscape; margin: 10mm; }
+
+  /* Browsers drop background colours when printing unless told otherwise —
+     without this the entire Gantt (bars, track, quarter lines) prints blank. */
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
   .no-print, .app-header, .tabs, .app-footer, .gantt-tooltip { display: none !important; }
   #tab-sheet { display: block !important; }
   .tab-panel:not(#tab-sheet) { display: none !important; }
   body { background: white; padding-bottom: 0; }
   main { max-width: none; padding: 0; }
-  .print-header { display: block; margin-bottom: 0.5rem; }
+
+  .print-header { display: block; margin-bottom: 0.6rem; }
   .print-header h2 { margin: 0 0 2px; color: black; }
   .print-header p { margin: 0; color: #444; font-size: 0.8rem; }
+
   .gantt-container {
     overflow: visible;
     border: none;
     padding: 0;
     box-shadow: none;
+    break-inside: avoid;
   }
   .gantt-track { min-width: 0; }
+  .gantt-seg { opacity: 1; }
+  /* Keep a hairline on the track so the chart still reads on a mono printer. */
+  .gantt-track { outline: 1px solid #d5ddd2; }
+
+  /* Side-by-side columns leave a dead half-page once the short minutes table
+     ends and the long sub timeline keeps flowing — stack them for print. */
+  .results-grid { display: block; }
+  .results-grid > div + div { margin-top: 1rem; }
+  /* Keep each block whole rather than splitting a table over a page break. */
+  .results-grid > div { break-inside: avoid; }
+
+  h3 { break-after: avoid; }
   .table-scroll { max-height: none; overflow: visible; border: none; }
-  .gantt-container, table.data-table { break-inside: avoid; }
+  table.data-table { break-inside: auto; font-size: 0.72rem; }
+  table.data-table thead { display: table-header-group; }
+  table.data-table tr { break-inside: avoid; }
+  table.data-table tbody tr:hover { background: none; }
+  table.data-table th, table.data-table td { padding: 0.18rem 0.4rem; }
+
+  /* Landscape gives these narrow tables far more width than they need, so
+     flow them into columns instead of one very sparse row per line. */
+  #minutes-table .table-scroll { column-count: 2; column-gap: 2rem; }
+  #timeline-table .table-scroll { column-count: 4; column-gap: 1.25rem; }
 }

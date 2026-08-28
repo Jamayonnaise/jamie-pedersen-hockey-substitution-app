@@ -1,6 +1,6 @@
-import { getState, updateState, newId, PALETTE, TEST_SQUAD_NAMES } from "./storage.js?v=3";
-import { buildSchedule, subEvents, onFieldCounts, mergeSegs, qClock, firstName } from "./scheduler.js?v=3";
-import { downloadCsv } from "./export.js?v=3";
+import { getState, updateState, newId, PALETTE, TEST_SQUAD_NAMES } from "./storage.js?v=4";
+import { buildSchedule, subEvents, onFieldCounts, mergeSegs, qClock, firstName } from "./scheduler.js?v=4";
+import { downloadCsv } from "./export.js?v=4";
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
@@ -499,7 +499,9 @@ function renderGantt(schedule, assign, positions, total, periods, qmins) {
   let html = `<div class="gantt-axis">`;
   for (let q = 0; q <= periods; q++) {
     const leftPct = ((q * qmins) / total) * 100;
-    html += `<span style="left:${leftPct}%">${q === periods ? "FT" : `Q${q + 1}`}</span>`;
+    // The final "FT" label sits at 100%, so pull it back inside the track.
+    const endClass = q === periods ? ' class="axis-end"' : "";
+    html += `<span${endClass} style="left:${leftPct}%">${q === periods ? "FT" : `Q${q + 1}`}</span>`;
   }
   html += `</div>`;
 

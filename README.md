@@ -82,10 +82,28 @@ you enter any numeric weight.
 
 ## Printing / PDF export
 
-The print stylesheet renders the sub sheet in landscape with a plain-text
-header (match length, bench settings, print date) since the app's normal
-header/tabs are hidden on paper. The Gantt chart and tables print at full
-width/height instead of being clipped to their on-screen scrollable boxes.
+"Print / Save as PDF" produces a two-page landscape sheet: page 1 is the full
+Gantt chart, page 2 is the minutes summary and the complete sub timeline.
+
+Three things the print stylesheet has to handle that are easy to miss:
+
+- **`print-color-adjust: exact`** — browsers drop background colours when
+  printing by default, and the Gantt bars *are* backgrounds, so without this
+  the whole chart prints as a blank grid.
+- **Column flow** — the tables are narrow and landscape pages are wide, so
+  the minutes table flows into 2 columns and the sub timeline into 4 rather
+  than printing one very sparse row per line (that alone took it from 4
+  pages to 2).
+- **Unclipping** — the on-screen scroll boxes (`max-height`, `overflow`) and
+  the two-column results grid are all undone for print, otherwise content is
+  clipped or leaves a dead half-page column.
+
+If you change the print CSS, verify it by actually rendering a PDF rather
+than eyeballing the screen — headless Chrome can do it:
+
+```bash
+chrome --headless=new --no-pdf-header-footer --print-to-pdf=out.pdf http://localhost:8000
+```
 
 ## Running locally
 
