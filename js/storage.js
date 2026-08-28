@@ -28,7 +28,7 @@ function defaultState() {
     nextId: 1,
     squad: [],
     positions: DEFAULT_POSITIONS.map((p) => ({ ...p })),
-    match: { periods: 4, perLen: 15, maxOff: 6, targetOff: 3 },
+    match: { periods: 4, perLen: 15, maxOff: 6, targetOff: 3, minStart: 3 },
     roster: {}, // playerId -> {available, position, maxMin, weight, lock}
     schedule: null, // playerId -> [[s,e],...]
     assign: null, // playerId -> positionName
@@ -42,7 +42,9 @@ function load() {
     const raw = localStorage.getItem(KEY);
     if (!raw) return defaultState();
     const parsed = JSON.parse(raw);
-    return { ...defaultState(), ...parsed };
+    const merged = { ...defaultState(), ...parsed };
+    merged.match = { ...defaultState().match, ...(parsed.match || {}) };
+    return merged;
   } catch (e) {
     console.warn("Failed to load saved state, starting fresh.", e);
     return defaultState();

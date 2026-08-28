@@ -160,7 +160,7 @@ label small { font-weight: 400; color: var(--muted); }
   margin-bottom: 0.5rem;
 }
 @media (min-width: 640px) {
-  .grid-4 { grid-template-columns: repeat(4, 1fr); }
+  .grid-4 { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
 }
 
 .editable-table, .roster-table {
@@ -216,11 +216,45 @@ label small { font-weight: 400; color: var(--muted); }
   overflow: hidden;
   text-overflow: ellipsis;
   padding-right: 6px;
+  cursor: default;
+  border-radius: 3px;
+}
+.gantt-name:hover, .gantt-name:focus-visible {
+  background: var(--info-bg);
+  outline: none;
 }
 .gantt-name .mins { color: var(--muted); }
 .gantt-track { position: relative; height: 14px; flex: 1; min-width: 500px; background: var(--info-bg); border-radius: 3px; }
 .gantt-qline { position: absolute; top: 0; width: 1px; height: 14px; background: var(--border); }
-.gantt-seg { position: absolute; top: 0; height: 14px; border-radius: 3px; opacity: 0.9; }
+.gantt-seg {
+  position: absolute;
+  top: 0;
+  height: 14px;
+  border-radius: 3px;
+  opacity: 0.9;
+  cursor: pointer;
+  transition: filter 0.1s, opacity 0.1s;
+}
+.gantt-seg:hover, .gantt-seg:focus-visible {
+  opacity: 1;
+  filter: brightness(1.15);
+  outline: 2px solid var(--text);
+  outline-offset: 1px;
+}
+
+.gantt-tooltip {
+  position: fixed;
+  z-index: 1000;
+  background: var(--text);
+  color: white;
+  font-size: 0.78rem;
+  line-height: 1.35;
+  padding: 0.4rem 0.6rem;
+  border-radius: 6px;
+  max-width: 220px;
+  pointer-events: none;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+}
 
 .results-grid { display: grid; grid-template-columns: 1fr; gap: 1.5rem; }
 @media (min-width: 720px) {

@@ -58,10 +58,12 @@ export function firstName(name) {
 /**
  * players: array of player ids (squad order).
  * caps/weights/locks: {playerId: value} maps.
+ * minStart: minimum minutes a starting-lineup player must stay on before
+ *   being eligible for a routine (non-forced) substitution.
  * Returns {playerId: [[start,end], ...]}.
  */
 export function schedulePosition(players, slots, total, maxOff, targetOff, groupOffset,
-                                  caps, weights, locks, mode = "roll") {
+                                  caps, weights, locks, mode = "roll", minStart = 0) {
   const n = players.length;
   const out = {};
   if (n === 0) return out;
@@ -101,6 +103,7 @@ export function schedulePosition(players, slots, total, maxOff, targetOff, group
 
   let on = rot.slice(0, rotSlots);
   let bench = rot.slice(rotSlots);
+  const starters = new Set(on);
   const active = new Set(rot);
   const onTime = {}, offRun = {}, segOpen = {}, blocks = {};
   for (const p of rot) {
@@ -134,9 +137,22 @@ export function schedulePosition(players, slots, total, maxOff, targetOff, group
     const pool = bench.filter((q) => active.has(q) && underCap(q));
     return pool.length ? argMaxFirst(pool, (q) => offRun[q]) : null;
   };
-  const leaverSoft = () =>
-    on.length ? argMaxFirst(on, (q) => onTime[q] / (weights[q] ?? 1.0)) : null;
-  const leaverHard = () => (on.length ? argMaxFirst(on, (q) => onTime[q]) : null);
+  const isProtectedStarter = (q) => starters.has(q) && onTime[q] < minStart;
+  // Routine swaps never touch a starter who hasn't done their minimum time yet —
+  // if every on-field player is still protected, the wave simply skips.
+  const leaverSoft = () => {
+    if (!on.length) return null;
+    const eligible = on.filter((q) => !isProtectedStarter(q));
+    return eligible.length ? argMaxFirst(eligible, (q) => onTime[q] / (weights[q] ?? 1.0)) : null;
+  };
+  // Forced return enforces the HARD max-bench guarantee, so it may override
+  // the starter-minimum protection as a last resort if nobody else qualifies.
+  const leaverHard = () => {
+    if (!on.length) return null;
+    const eligible = on.filter((q) => !isProtectedStarter(q));
+    const pool = eligible.length ? eligible : on;
+    return argMaxFirst(pool, (q) => onTime[q]);
+  };
 
   for (let minute = 0; minute <= total; minute++) {
     // 1) cap-outs: anyone who hit their max retires; replacement comes on.
@@ -197,7 +213,7 @@ export function schedulePosition(players, slots, total, maxOff, targetOff, group
  * Returns {playerId: [[start,end], ...]}
  */
 export function buildSchedule(squad, assign, positions, total, maxOff, targetOff,
-                               caps, weights, locks) {
+                               caps, weights, locks, minStart = 0) {
   const schedule = {};
   for (const p of squad) schedule[p.id] = [];
   let rollingIdx = 0;
@@ -220,7 +236,8 @@ export function buildSchedule(squad, assign, positions, total, maxOff, targetOff
       caps,
       weights,
       locks,
-      mode
+      mode,
+      minStart
     );
     for (const [pid, segs] of Object.entries(res)) {
       schedule[pid] = segs;

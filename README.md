@@ -29,10 +29,14 @@ it a true "clone the repo and open it" static site.
 - **Lock** — mark an "iron player" who plays the entire match untouched by
   the rotation.
 - **Auto-substitution scheduling** — generate a full-game sub sheet from
-  periods, minutes/period, max bench time, and target break time.
-- **Output view** — a Gantt-style timeline of who's on/off and when, a
-  minutes-played summary, and a sub-by-sub timeline, all exportable as CSV or
-  printable to PDF via the browser's print dialog.
+  periods, minutes/period, max bench time, target break time, and a minimum
+  starter time (the starting lineup won't be routinely subbed off before
+  they've played at least this long — 3 minutes by default).
+- **Output view** — an interactive Gantt-style timeline of who's on/off and
+  when (hover or tap a bar for that stint's exact minutes, or a player's name
+  for their total minutes/stint count), a minutes-played summary, and a
+  sub-by-sub timeline, all exportable as CSV or printable to PDF via the
+  browser's print dialog.
 
 ## Algorithm
 
@@ -54,6 +58,12 @@ exactly:
   divide the match into even blocks — this is inherited as-is from the
   source app, so an injury cap on a split-mode player is currently a no-op.
   Worth knowing if you use `split` mode for anything other than keepers.
+- **Minimum starter time** is a new addition on top of the source algorithm:
+  a starting-lineup player is skipped as the "leaver" for routine
+  substitution waves until they've played the configured minimum. It never
+  overrides the hard max-bench-time guarantee — if a coach sets `max bench`
+  below `min starter time`, the bench-time guarantee wins and a starter can
+  be subbed early to keep a benched player from breaching their hard cap.
 
 One intentional behavior change from the source: the original only offered
 three fixed priority tiers (Normal/More/Lots → 1×/2×/4×). This version lets

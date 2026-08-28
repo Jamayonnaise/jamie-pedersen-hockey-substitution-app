@@ -136,6 +136,7 @@ function initMatchInputs() {
   $("#perlen-input").value = s.match.perLen;
   $("#maxoff-input").value = s.match.maxOff;
   $("#targetoff-input").value = s.match.targetOff;
+  $("#minstart-input").value = s.match.minStart;
   updateMatchCaption();
 
   const bind = (id, key, parser = Number) => {
@@ -151,6 +152,7 @@ function initMatchInputs() {
   bind("#perlen-input", "perLen", (v) => parseInt(v, 10));
   bind("#maxoff-input", "maxOff", (v) => parseInt(v, 10));
   bind("#targetoff-input", "targetOff", (v) => parseInt(v, 10));
+  bind("#minstart-input", "minStart", (v) => parseInt(v, 10));
 }
 
 function updateMatchCaption() {
@@ -282,6 +284,93 @@ function renderRoster() {
   });
 }
 
+// ─────────────────────────── Gantt tooltip ───────────────────────────
+let ganttTooltipEl = null;
+
+function ganttTooltipHtml(target) {
+  const seg = target.closest(".gantt-seg");
+  if (seg) {
+    const { name, pos, start, end } = seg.dataset;
+    const dur = Number(end) - Number(start);
+    return `<strong>${escapeHtml(name)}</strong> — ${escapeHtml(pos)}<br>On ${start}' → Off ${end}' (${dur} min stint)`;
+  }
+  const nameEl = target.closest(".gantt-name");
+  if (nameEl) {
+    const { name, pos, mins, stints } = nameEl.dataset;
+    return `<strong>${escapeHtml(name)}</strong> — ${escapeHtml(pos)}<br>${mins} min total across ${stints} stint${stints === "1" ? "" : "s"}`;
+  }
+  return null;
+}
+
+function positionTooltip(x, y) {
+  const el = ganttTooltipEl;
+  const pad = 14;
+  el.style.left = "0px";
+  el.style.top = "0px";
+  const rect = el.getBoundingClientRect();
+  let left = x + pad;
+  let top = y + pad;
+  if (left + rect.width > window.innerWidth - 4) left = x - rect.width - pad;
+  if (top + rect.height > window.innerHeight - 4) top = y - rect.height - pad;
+  el.style.left = `${Math.max(4, left)}px`;
+  el.style.top = `${Math.max(4, top)}px`;
+}
+
+function showGanttTooltip(html, x, y) {
+  ganttTooltipEl.innerHTML = html;
+  ganttTooltipEl.hidden = false;
+  positionTooltip(x, y);
+}
+
+function hideGanttTooltip() {
+  ganttTooltipEl.hidden = true;
+}
+
+function initGanttTooltip() {
+  ganttTooltipEl = document.createElement("div");
+  ganttTooltipEl.className = "gantt-tooltip";
+  ganttTooltipEl.hidden = true;
+  document.body.appendChild(ganttTooltipEl);
+
+  const container = $("#gantt-container");
+
+  container.addEventListener("mousemove", (e) => {
+    const html = ganttTooltipHtml(e.target);
+    if (html) showGanttTooltip(html, e.clientX, e.clientY);
+    else hideGanttTooltip();
+  });
+  container.addEventListener("mouseleave", hideGanttTooltip);
+
+  // Touch/tap support: tap a segment or name to pin the tooltip, tap elsewhere to dismiss.
+  container.addEventListener("click", (e) => {
+    const html = ganttTooltipHtml(e.target);
+    if (html) {
+      const rect = e.target.getBoundingClientRect();
+      showGanttTooltip(html, rect.left + rect.width / 2, rect.top);
+      e.stopPropagation();
+    } else {
+      hideGanttTooltip();
+    }
+  });
+  // Keyboard focus (segments/names are tabindex=0) shows the same tooltip.
+  container.addEventListener(
+    "focus",
+    (e) => {
+      const html = ganttTooltipHtml(e.target);
+      if (html) {
+        const rect = e.target.getBoundingClientRect();
+        showGanttTooltip(html, rect.left + rect.width / 2, rect.bottom);
+      }
+    },
+    true
+  );
+  container.addEventListener("blur", hideGanttTooltip, true);
+
+  document.addEventListener("click", (e) => {
+    if (!container.contains(e.target)) hideGanttTooltip();
+  });
+}
+
 // ─────────────────────────── Sub sheet tab ───────────────────────────
 function generateRotation() {
   const s = getState();
@@ -306,7 +395,7 @@ function generateRotation() {
   }
 
   const total = s.match.periods * s.match.perLen;
-  const schedule = buildSchedule(available, assign, positions, total, s.match.maxOff, s.match.targetOff, caps, weights, locks);
+  const schedule = buildSchedule(available, assign, positions, total, s.match.maxOff, s.match.targetOff, caps, weights, locks, s.match.minStart);
 
   updateState((s) => {
     s.schedule = schedule;
@@ -377,8 +466,14 @@ function renderGantt(schedule, assign, positions, total, periods, qmins) {
     for (const p of orderedMembers) {
       const segs = schedule[p.id] || [];
       const mins = segs.reduce((sum, [s, e]) => sum + (e - s), 0);
+      const name = firstName(p.name);
       html += `<div class="gantt-row">
-        <div class="gantt-name">${escapeHtml(firstName(p.name))} <span class="mins">${mins}'</span></div>
+        <div class="gantt-name" tabindex="0"
+             data-name="${escapeHtml(name)}" data-pos="${escapeHtml(pos.name)}"
+             data-mins="${mins}" data-stints="${segs.length}"
+             aria-label="${escapeHtml(name)}, ${escapeHtml(pos.name)}, ${mins} minutes total across ${segs.length} stint${segs.length === 1 ? "" : "s"}">
+          ${escapeHtml(name)} <span class="mins">${mins}'</span>
+        </div>
         <div class="gantt-track">`;
       for (let q = 1; q < periods; q++) {
         const leftPct = ((q * qmins) / total) * 100;
@@ -387,7 +482,10 @@ function renderGantt(schedule, assign, positions, total, periods, qmins) {
       for (const [s, e] of segs) {
         const leftPct = (s / total) * 100;
         const widthPct = ((e - s) / total) * 100;
-        html += `<div class="gantt-seg" style="left:${leftPct}%;width:${widthPct}%;background:${colors[pos.name]}"></div>`;
+        html += `<div class="gantt-seg" tabindex="0" style="left:${leftPct}%;width:${widthPct}%;background:${colors[pos.name]}"
+                   data-name="${escapeHtml(name)}" data-pos="${escapeHtml(pos.name)}"
+                   data-start="${s}" data-end="${e}"
+                   aria-label="${escapeHtml(name)}, ${escapeHtml(pos.name)}, on field from minute ${s} to ${e}, ${e - s} minute stint"></div>`;
       }
       html += `</div></div>`;
     }
@@ -538,6 +636,7 @@ function init() {
   initPositionsTab();
   initManualEditor();
   initExport();
+  initGanttTooltip();
   renderAll();
 }
 
