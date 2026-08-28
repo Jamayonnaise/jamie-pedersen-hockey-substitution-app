@@ -28,10 +28,13 @@ it a true "clone the repo and open it" static site.
   for the rest of the match.
 - **Lock** — mark an "iron player" who plays the entire match untouched by
   the rotation.
+- **Starting lineup** — tick exactly who kicks off on the field per
+  position; a live summary flags if you've ticked too few or too many for a
+  position's slot count. Unticked slots auto-fill from squad order.
 - **Auto-substitution scheduling** — generate a full-game sub sheet from
   periods, minutes/period, max bench time, target break time, and a minimum
-  starter time (the starting lineup won't be routinely subbed off before
-  they've played at least this long — 3 minutes by default).
+  stint length (no routine sub — at kickoff, mid-match, or near full-time —
+  creates a stint shorter than this; 3 minutes by default).
 - **Output view** — an interactive Gantt-style timeline of who's on/off and
   when (hover or tap a bar for that stint's exact minutes, or a player's name
   for their total minutes/stint count), a minutes-played summary, and a
@@ -58,16 +61,31 @@ exactly:
   divide the match into even blocks — this is inherited as-is from the
   source app, so an injury cap on a split-mode player is currently a no-op.
   Worth knowing if you use `split` mode for anything other than keepers.
-- **Minimum starter time** is a new addition on top of the source algorithm:
-  a starting-lineup player is skipped as the "leaver" for routine
-  substitution waves until they've played the configured minimum. It never
-  overrides the hard max-bench-time guarantee — if a coach sets `max bench`
-  below `min starter time`, the bench-time guarantee wins and a starter can
-  be subbed early to keep a benched player from breaching their hard cap.
+- **Minimum stint length** is a new addition on top of the source algorithm:
+  no routine substitution wave will cut a player's current stint short before
+  it reaches the configured minimum (measured from when they came on, so it
+  applies every time a player is subbed on, not just at kickoff), and a wave
+  won't bring a new player on at all once too little match time remains for
+  them to get a full minimum-length stint. It never overrides the hard
+  max-bench-time guarantee — if a coach sets `max bench` below the minimum
+  stint length, the bench-time guarantee wins and a player can be subbed
+  early to keep someone else from breaching their hard cap.
+- **Starting lineup** is also new: the source algorithm always picked the
+  starting XI implicitly (first N players in squad order per position).
+  Ticking "Start on field" for specific players now controls this directly —
+  ticked players fill the position's starting slots first (in squad order
+  among themselves); any leftover slots still auto-fill from squad order.
 
 One intentional behavior change from the source: the original only offered
 three fixed priority tiers (Normal/More/Lots → 1×/2×/4×). This version lets
 you enter any numeric weight.
+
+## Printing / PDF export
+
+The print stylesheet renders the sub sheet in landscape with a plain-text
+header (match length, bench settings, print date) since the app's normal
+header/tabs are hidden on paper. The Gantt chart and tables print at full
+width/height instead of being clipped to their on-screen scrollable boxes.
 
 ## Running locally
 

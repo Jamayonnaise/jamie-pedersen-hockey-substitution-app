@@ -103,7 +103,6 @@ export function schedulePosition(players, slots, total, maxOff, targetOff, group
 
   let on = rot.slice(0, rotSlots);
   let bench = rot.slice(rotSlots);
-  const starters = new Set(on);
   const active = new Set(rot);
   const onTime = {}, offRun = {}, segOpen = {}, blocks = {};
   for (const p of rot) {
@@ -137,19 +136,22 @@ export function schedulePosition(players, slots, total, maxOff, targetOff, group
     const pool = bench.filter((q) => active.has(q) && underCap(q));
     return pool.length ? argMaxFirst(pool, (q) => offRun[q]) : null;
   };
-  const isProtectedStarter = (q) => starters.has(q) && onTime[q] < minStart;
-  // Routine swaps never touch a starter who hasn't done their minimum time yet —
-  // if every on-field player is still protected, the wave simply skips.
-  const leaverSoft = () => {
+  // No stint — the opening kickoff stint or any later one — may be cut short by a
+  // routine swap before it reaches minStart minutes. Measured against the current
+  // stint's own start (segOpen), not cumulative on-time, so it applies uniformly
+  // every time a player comes on, not just at kickoff.
+  const stintElapsed = (q, minute) => (segOpen[q] === null ? Infinity : minute - segOpen[q]);
+  const isProtected = (q, minute) => stintElapsed(q, minute) < minStart;
+  const leaverSoft = (minute) => {
     if (!on.length) return null;
-    const eligible = on.filter((q) => !isProtectedStarter(q));
+    const eligible = on.filter((q) => !isProtected(q, minute));
     return eligible.length ? argMaxFirst(eligible, (q) => onTime[q] / (weights[q] ?? 1.0)) : null;
   };
   // Forced return enforces the HARD max-bench guarantee, so it may override
-  // the starter-minimum protection as a last resort if nobody else qualifies.
-  const leaverHard = () => {
+  // the minimum-stint protection as a last resort if nobody else qualifies.
+  const leaverHard = (minute) => {
     if (!on.length) return null;
-    const eligible = on.filter((q) => !isProtectedStarter(q));
+    const eligible = on.filter((q) => !isProtected(q, minute));
     const pool = eligible.length ? eligible : on;
     return argMaxFirst(pool, (q) => onTime[q]);
   };
@@ -173,18 +175,19 @@ export function schedulePosition(players, slots, total, maxOff, targetOff, group
     // 2) forced return: about to breach max bench time -> comes on now.
     if (minute > 0) {
       for (const p of bench.filter((q) => active.has(q) && offRun[q] >= maxOff)) {
-        const lv = leaverHard();
+        const lv = leaverHard(minute);
         if (lv != null) {
           takeOff(lv, minute);
           putOn(p, minute);
         }
       }
     }
-    // 3) routine wave swap at this group's staggered window.
-    if (minute > 0 && minute < total && (minute - groupOffset) % W === 0) {
+    // 3) routine wave swap at this group's staggered window. Skipped once too
+    // little match time remains for an incoming player to get a full minStart stint.
+    if (minute > 0 && minute < total && (minute - groupOffset) % W === 0 && total - minute >= minStart) {
       const cm = comer();
       if (cm != null) {
-        const lv = leaverSoft();
+        const lv = leaverSoft(minute);
         if (lv != null && onTime[lv] >= onTime[cm]) {
           takeOff(lv, minute);
           putOn(cm, minute);

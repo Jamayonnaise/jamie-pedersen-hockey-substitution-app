@@ -72,11 +72,13 @@
     <hr />
     <h2>Match-day roster &amp; player rules</h2>
     <p class="caption">Tick who's available, assign a position, then tune individuals:
-      <strong>Max min</strong> caps an injured/load-managed player, <strong>Weight</strong> gives a
-      key player a bigger share of playing time (1 = normal, higher = more), <strong>Lock</strong>
-      keeps an iron player on the whole match.</p>
+      <strong>Start ⭐</strong> puts them in the kickoff lineup, <strong>Max min</strong> caps an
+      injured/load-managed player, <strong>Weight</strong> gives a key player a bigger share of
+      playing time (1 = normal, higher = more), <strong>Lock</strong> keeps an iron player on the
+      whole match.</p>
     <p id="roster-empty-msg" class="info-box">Add players in the Squad tab first.</p>
     <div id="roster-table" class="roster-table"></div>
+    <div id="starter-summary" class="starter-summary"></div>
   </section>
 
   <!-- ────────────────── TAB 3: SUB SHEET ────────────────── -->
@@ -91,6 +93,7 @@
       <strong>Generate rotation</strong>.</p>
 
     <div id="sheet-results" hidden>
+      <div id="print-header" class="print-header"></div>
       <p id="sanity-banner" class="no-print"></p>
 
       <div id="gantt-container" class="gantt-container"></div>

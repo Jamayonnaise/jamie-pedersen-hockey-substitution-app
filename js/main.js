@@ -44,15 +44,15 @@ function fixRosterPositions() {
 function rosterFor(playerId) {
   const s = getState();
   const names = activePositions().map((p) => p.name);
-  return (
-    s.roster[playerId] || {
-      available: true,
-      position: names[0] || "",
-      maxMin: null,
-      weight: 1,
-      lock: false,
-    }
-  );
+  const defaults = {
+    available: true,
+    position: names[0] || "",
+    maxMin: null,
+    weight: 1,
+    lock: false,
+    starter: false,
+  };
+  return { ...defaults, ...(s.roster[playerId] || {}) };
 }
 
 // ─────────────────────────── Squad tab ───────────────────────────
@@ -219,6 +219,32 @@ function updateTotalOnFieldCaption() {
   $("#total-on-field-caption").textContent = `Total on field: ${total}  (11-a-side hockey = 11)`;
 }
 
+function renderStarterSummary() {
+  const s = getState();
+  const positions = activePositions();
+  const el = $("#starter-summary");
+  if (!s.squad.length || !positions.length) {
+    el.innerHTML = "";
+    return;
+  }
+  const rows = positions.map((pos) => {
+    const inPos = s.squad.filter((p) => {
+      const r = rosterFor(p.id);
+      return r.available && r.position === pos.name;
+    });
+    const starters = inPos.filter((p) => rosterFor(p.id).starter);
+    const need = Number(pos.onField) || 0;
+    let status = "ok";
+    let note = `${starters.length} / ${need} starters ticked`;
+    if (starters.length < need) { status = "warn"; note += " — rest auto-filled from squad order"; }
+    else if (starters.length > need) { status = "warn"; note += ` — only the first ${need} (squad order) will kick off`; }
+    return { name: pos.name, status, note };
+  });
+  el.innerHTML = rows
+    .map((r) => `<span class="starter-chip ${r.status === "ok" ? "chip-ok" : "chip-warn"}">${escapeHtml(r.name)}: ${escapeHtml(r.note)}</span>`)
+    .join("");
+}
+
 function initPositionsTab() {
   $("#add-position-btn").addEventListener("click", () => {
     updateState((s) => { s.positions.push({ name: "New position", onField: 1, mode: "roll" }); });
@@ -258,7 +284,10 @@ function renderRoster() {
           <input type="number" class="r-weight" min="0.1" step="0.1" value="${r.weight ?? 1}" />
         </label>
       </div>
-      <label class="checkbox-field"><input type="checkbox" class="r-lock" ${r.lock ? "checked" : ""} /> Lock on (never subbed off)</label>
+      <div class="roster-toggles">
+        <label class="checkbox-field starter-toggle"><input type="checkbox" class="r-starter" ${r.starter ? "checked" : ""} /> ⭐ Start on field</label>
+        <label class="checkbox-field"><input type="checkbox" class="r-lock" ${r.lock ? "checked" : ""} /> 🔒 Lock on (never subbed off)</label>
+      </div>
     </div>`;
     })
     .join("");
@@ -270,8 +299,8 @@ function renderRoster() {
         s.roster[id] = { ...rosterFor(id), ...mutator() };
       });
     };
-    row.querySelector(".r-available").addEventListener("change", (e) => save(() => ({ available: e.target.checked })));
-    row.querySelector(".r-position").addEventListener("change", (e) => save(() => ({ position: e.target.value })));
+    row.querySelector(".r-available").addEventListener("change", (e) => { save(() => ({ available: e.target.checked })); renderStarterSummary(); });
+    row.querySelector(".r-position").addEventListener("change", (e) => { save(() => ({ position: e.target.value })); renderStarterSummary(); });
     row.querySelector(".r-maxmin").addEventListener("input", (e) => {
       const v = e.target.value.trim();
       save(() => ({ maxMin: v === "" ? null : Math.max(0, parseInt(v, 10) || 0) }));
@@ -280,8 +309,11 @@ function renderRoster() {
       const v = parseFloat(e.target.value);
       save(() => ({ weight: Number.isFinite(v) && v > 0 ? v : 1 }));
     });
+    row.querySelector(".r-starter").addEventListener("change", (e) => { save(() => ({ starter: e.target.checked })); renderStarterSummary(); });
     row.querySelector(".r-lock").addEventListener("change", (e) => save(() => ({ lock: e.target.checked })));
   });
+
+  renderStarterSummary();
 }
 
 // ─────────────────────────── Gantt tooltip ───────────────────────────
@@ -394,8 +426,17 @@ function generateRotation() {
     locks[p.id] = !!r.lock;
   }
 
+  // Within each position, ticked starters go first (stable sort keeps squad
+  // order among ties) so schedulePosition's initial on-field slots are filled
+  // by them — the rest of the position's slots auto-fill from squad order.
+  const ordered = [...available].sort((a, b) => {
+    const aStarter = rosterFor(a.id).starter ? 0 : 1;
+    const bStarter = rosterFor(b.id).starter ? 0 : 1;
+    return aStarter - bStarter;
+  });
+
   const total = s.match.periods * s.match.perLen;
-  const schedule = buildSchedule(available, assign, positions, total, s.match.maxOff, s.match.targetOff, caps, weights, locks, s.match.minStart);
+  const schedule = buildSchedule(ordered, assign, positions, total, s.match.maxOff, s.match.targetOff, caps, weights, locks, s.match.minStart);
 
   updateState((s) => {
     s.schedule = schedule;
@@ -418,6 +459,11 @@ function renderSheet() {
   const assign = s.assign || {};
   const schedule = s.schedule;
   const squadById = Object.fromEntries(s.squad.map((p) => [p.id, p]));
+
+  $("#print-header").innerHTML = `<h2>🏑 Field Hockey Manager — Sub Sheet</h2>
+    <p>${s.match.periods} × ${s.match.perLen} min (${total} min total) ·
+    max bench ${s.match.maxOff}' · target break ${s.match.targetOff}' ·
+    printed ${new Date().toLocaleDateString()}</p>`;
 
   renderSanity(schedule, positions, total);
   renderGantt(schedule, assign, positions, total, s.match.periods, qmins);
