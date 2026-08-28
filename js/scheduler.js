@@ -58,12 +58,15 @@ export function firstName(name) {
 /**
  * players: array of player ids (squad order).
  * caps/weights/locks: {playerId: value} maps.
- * minStart: minimum minutes a starting-lineup player must stay on before
- *   being eligible for a routine (non-forced) substitution.
+ * minStart: minimum minutes any stint must run before a routine (non-forced)
+ *   substitution may end it.
+ * maxStint: longest a player may stay on in one stint before being forced
+ *   off (0 = no limit).
  * Returns {playerId: [[start,end], ...]}.
  */
 export function schedulePosition(players, slots, total, maxOff, targetOff, groupOffset,
-                                  caps, weights, locks, mode = "roll", minStart = 0) {
+                                  caps, weights, locks, mode = "roll", minStart = 0,
+                                  maxStint = 0) {
   const n = players.length;
   const out = {};
   if (n === 0) return out;
@@ -100,6 +103,10 @@ export function schedulePosition(players, slots, total, maxOff, targetOff, group
 
   const initBench = rot.length - rotSlots;
   const W = Math.max(1, Math.min(Math.floor(maxOff / initBench), Math.max(1, targetOff)));
+
+  // A max stint shorter than the min stint is self-contradictory; the minimum
+  // wins so stints stay meaningful, pinning every stint to exactly minStart.
+  const stintCap = maxStint > 0 ? Math.max(maxStint, minStart) : 0;
 
   let on = rot.slice(0, rotSlots);
   let bench = rot.slice(rotSlots);
@@ -182,6 +189,24 @@ export function schedulePosition(players, slots, total, maxOff, targetOff, group
         }
       }
     }
+    // 2b) forced exit: anyone who has been on for the max stint comes off now.
+    // Needs a replacement to keep the on-field count exact, and stops near
+    // full-time so it can't manufacture a stint shorter than minStart.
+    if (stintCap > 0 && minute > 0 && minute < total && total - minute >= minStart) {
+      // Whoever we bench this minute must not be picked straight back on as
+      // someone else's replacement — they would never actually leave the
+      // field and the two stints would merge into one long one.
+      const justOff = new Set();
+      for (const p of on.filter((q) => stintElapsed(q, minute) >= stintCap)) {
+        const pool = bench.filter((q) => active.has(q) && underCap(q) && !justOff.has(q));
+        const rep = pool.length ? argMaxFirst(pool, (q) => offRun[q]) : null;
+        if (rep != null) {
+          takeOff(p, minute);
+          justOff.add(p);
+          putOn(rep, minute);
+        }
+      }
+    }
     // 3) routine wave swap at this group's staggered window. Skipped once too
     // little match time remains for an incoming player to get a full minStart stint.
     if (minute > 0 && minute < total && (minute - groupOffset) % W === 0 && total - minute >= minStart) {
@@ -216,7 +241,7 @@ export function schedulePosition(players, slots, total, maxOff, targetOff, group
  * Returns {playerId: [[start,end], ...]}
  */
 export function buildSchedule(squad, assign, positions, total, maxOff, targetOff,
-                               caps, weights, locks, minStart = 0) {
+                               caps, weights, locks, minStart = 0, maxStint = 0) {
   const schedule = {};
   for (const p of squad) schedule[p.id] = [];
   let rollingIdx = 0;
@@ -240,7 +265,8 @@ export function buildSchedule(squad, assign, positions, total, maxOff, targetOff
       weights,
       locks,
       mode,
-      minStart
+      minStart,
+      maxStint
     );
     for (const [pid, segs] of Object.entries(res)) {
       schedule[pid] = segs;

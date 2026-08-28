@@ -345,7 +345,13 @@ table.data-table tbody tr:hover { background: var(--info-bg); }
   #tab-sheet { display: block !important; }
   .tab-panel:not(#tab-sheet) { display: none !important; }
   body { background: white; padding-bottom: 0; }
-  main { max-width: none; padding: 0; }
+  /* Chrome's print dialog can override @page margin (e.g. "Margins: None"),
+     which pushes the Gantt flush to the paper edge where printers physically
+     cannot print. Keep our own gutter so the chart survives any setting. */
+  main { max-width: none; padding: 0 5mm; }
+  /* The last bar ends exactly at the track's right edge, so leave room for
+     it and the FT label rather than running them into the trim. */
+  .gantt-container { padding-right: 4mm !important; }
 
   .print-header { display: block; margin-bottom: 0.6rem; }
   .print-header h2 { margin: 0 0 2px; color: black; }
@@ -358,6 +364,9 @@ table.data-table tbody tr:hover { background: var(--info-bg); }
     box-shadow: none;
     break-inside: avoid;
   }
+  /* Print rows tighter so a big squad still fits one page. */
+  .gantt-row { height: 20px; }
+  .gantt-pos-label { margin: 8px 0 3px; }
   .gantt-track { min-width: 0; }
   .gantt-seg { opacity: 1; }
   /* Keep a hairline on the track so the chart still reads on a mono printer. */
@@ -367,8 +376,10 @@ table.data-table tbody tr:hover { background: var(--info-bg); }
      ends and the long sub timeline keeps flowing — stack them for print. */
   .results-grid { display: block; }
   .results-grid > div + div { margin-top: 1rem; }
-  /* Keep each block whole rather than splitting a table over a page break. */
-  .results-grid > div { break-inside: avoid; }
+  /* The minutes table is short, so keep it whole. The sub timeline can be
+     taller than a page on its own, so let it flow instead of leaving a
+     mostly-blank page behind when it refuses to split. */
+  .results-grid > div:first-child { break-inside: avoid; }
 
   h3 { break-after: avoid; }
   .table-scroll { max-height: none; overflow: visible; border: none; }
@@ -376,10 +387,14 @@ table.data-table tbody tr:hover { background: var(--info-bg); }
   table.data-table thead { display: table-header-group; }
   table.data-table tr { break-inside: avoid; }
   table.data-table tbody tr:hover { background: none; }
-  table.data-table th, table.data-table td { padding: 0.18rem 0.4rem; }
+  /* Every cell here is a short value, so never wrap one onto a second line —
+     custom position names like "Defending Mid" otherwise double every row's
+     height and add whole pages. */
+  table.data-table th, table.data-table td { padding: 0.18rem 0.4rem; white-space: nowrap; }
 
   /* Landscape gives these narrow tables far more width than they need, so
-     flow them into columns instead of one very sparse row per line. */
+     flow them into columns instead of one very sparse row per line. Three
+     columns stays wide enough for long custom position names. */
   #minutes-table .table-scroll { column-count: 2; column-gap: 2rem; }
-  #timeline-table .table-scroll { column-count: 4; column-gap: 1.25rem; }
+  #timeline-table .table-scroll { column-count: 3; column-gap: 1.5rem; }
 }

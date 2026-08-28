@@ -32,9 +32,11 @@ it a true "clone the repo and open it" static site.
   position; a live summary flags if you've ticked too few or too many for a
   position's slot count. Unticked slots auto-fill from squad order.
 - **Auto-substitution scheduling** — generate a full-game sub sheet from
-  periods, minutes/period, max bench time, target break time, and a minimum
+  periods, minutes/period, max bench time, target break time, a minimum
   stint length (no routine sub — at kickoff, mid-match, or near full-time —
-  creates a stint shorter than this; 3 minutes by default).
+  creates a stint shorter than this; 3 minutes by default) and an optional
+  maximum stint length (forces a sub once a player has been on that long;
+  0 = no limit).
 - **Output view** — an interactive Gantt-style timeline of who's on/off and
   when (hover or tap a bar for that stint's exact minutes, or a player's name
   for their total minutes/stint count), a minutes-played summary, and a
@@ -70,6 +72,15 @@ exactly:
   max-bench-time guarantee — if a coach sets `max bench` below the minimum
   stint length, the bench-time guarantee wins and a player can be subbed
   early to keep someone else from breaching their hard cap.
+- **Maximum stint length** (optional, new) forces a player off once they have
+  been on that long, taking the longest-benched substitute in return. Unlike
+  max bench time it is *best-effort, not a hard guarantee*, and can overrun by
+  a minute or two in two unavoidable cases: near full-time, where breaking the
+  stint would create one shorter than the minimum; and when several on-field
+  players in a position hit the cap in the same minute but the bench is too
+  shallow to replace them all at once (e.g. 6 players for 4 slots). Both are
+  bounded — the cap is applied as soon as a substitute is actually free. A max
+  stint below the min stint is self-contradictory, so the minimum wins.
 - **Starting lineup** is also new: the source algorithm always picked the
   starting XI implicitly (first N players in squad order per position).
   Ticking "Start on field" for specific players now controls this directly —
@@ -85,7 +96,15 @@ you enter any numeric weight.
 "Print / Save as PDF" produces a two-page landscape sheet: page 1 is the full
 Gantt chart, page 2 is the minutes summary and the complete sub timeline.
 
-Three things the print stylesheet has to handle that are easy to miss:
+Four things the print stylesheet has to handle that are easy to miss:
+
+- **Its own page gutter** — Chrome's print dialog can override `@page
+  { margin }` (choosing "Margins: None" zeroes it), which pushes the Gantt
+  flush to the paper edge where printers physically cannot print. The layout
+  keeps its own padding so it survives any margin setting.
+- **`white-space: nowrap` on table cells** — a custom position name like
+  "Defending Mid" otherwise wraps onto a second line in a narrow print
+  column, doubling every row's height and adding whole pages.
 
 - **`print-color-adjust: exact`** — browsers drop background colours when
   printing by default, and the Gantt bars *are* backgrounds, so without this

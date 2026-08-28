@@ -28,7 +28,7 @@ function defaultState() {
     nextId: 1,
     squad: [],
     positions: DEFAULT_POSITIONS.map((p) => ({ ...p })),
-    match: { periods: 4, perLen: 15, maxOff: 6, targetOff: 3, minStart: 3 },
+    match: { periods: 4, perLen: 15, maxOff: 6, targetOff: 3, minStart: 3, maxStint: 0 },
     roster: {}, // playerId -> {available, position, maxMin, weight, lock}
     schedule: null, // playerId -> [[s,e],...]
     assign: null, // playerId -> positionName

@@ -1,6 +1,6 @@
-import { getState, updateState, newId, PALETTE, TEST_SQUAD_NAMES } from "./storage.js?v=4";
-import { buildSchedule, subEvents, onFieldCounts, mergeSegs, qClock, firstName } from "./scheduler.js?v=4";
-import { downloadCsv } from "./export.js?v=4";
+import { getState, updateState, newId, PALETTE, TEST_SQUAD_NAMES } from "./storage.js?v=5";
+import { buildSchedule, subEvents, onFieldCounts, mergeSegs, qClock, firstName } from "./scheduler.js?v=5";
+import { downloadCsv } from "./export.js?v=5";
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
@@ -137,6 +137,7 @@ function initMatchInputs() {
   $("#maxoff-input").value = s.match.maxOff;
   $("#targetoff-input").value = s.match.targetOff;
   $("#minstart-input").value = s.match.minStart;
+  $("#maxstint-input").value = s.match.maxStint;
   updateMatchCaption();
 
   const bind = (id, key, parser = Number) => {
@@ -153,6 +154,7 @@ function initMatchInputs() {
   bind("#maxoff-input", "maxOff", (v) => parseInt(v, 10));
   bind("#targetoff-input", "targetOff", (v) => parseInt(v, 10));
   bind("#minstart-input", "minStart", (v) => parseInt(v, 10));
+  bind("#maxstint-input", "maxStint", (v) => parseInt(v, 10));
 }
 
 function updateMatchCaption() {
@@ -436,7 +438,7 @@ function generateRotation() {
   });
 
   const total = s.match.periods * s.match.perLen;
-  const schedule = buildSchedule(ordered, assign, positions, total, s.match.maxOff, s.match.targetOff, caps, weights, locks, s.match.minStart);
+  const schedule = buildSchedule(ordered, assign, positions, total, s.match.maxOff, s.match.targetOff, caps, weights, locks, s.match.minStart, s.match.maxStint);
 
   updateState((s) => {
     s.schedule = schedule;
@@ -460,9 +462,11 @@ function renderSheet() {
   const schedule = s.schedule;
   const squadById = Object.fromEntries(s.squad.map((p) => [p.id, p]));
 
+  const stintNote = s.match.maxStint > 0 ? ` · max stint ${s.match.maxStint}'` : "";
   $("#print-header").innerHTML = `<h2>🏑 Field Hockey Manager — Sub Sheet</h2>
     <p>${s.match.periods} × ${s.match.perLen} min (${total} min total) ·
     max bench ${s.match.maxOff}' · target break ${s.match.targetOff}' ·
+    min stint ${s.match.minStart}'${stintNote} ·
     printed ${new Date().toLocaleDateString()}</p>`;
 
   renderSanity(schedule, positions, total);
@@ -485,6 +489,36 @@ function renderSanity(schedule, positions, total) {
     banner.className = "banner-warn";
     banner.textContent = `On-field count off at minutes ${bad.join(", ")} (expected ${targetOn}). Check that each position has enough players assigned.`;
   }
+  renderStintNote(schedule);
+}
+
+/**
+ * Max bench time is a hard guarantee, so with a deep bench and a short bench
+ * cap it can force stints below the minimum. That is correct precedence but
+ * shouldn't be silent — a coach seeing 1-minute stints deserves to know why.
+ */
+function renderStintNote(schedule) {
+  const s = getState();
+  const minStint = s.match.minStart || 0;
+  const note = $("#stint-note");
+  if (!minStint) { note.hidden = true; return; }
+
+  let shortest = Infinity, count = 0;
+  for (const segs of Object.values(schedule)) {
+    for (const [start, end] of segs) {
+      const dur = end - start;
+      if (dur < minStint) { count += 1; shortest = Math.min(shortest, dur); }
+    }
+  }
+  if (!count) { note.hidden = true; return; }
+
+  note.hidden = false;
+  note.className = "banner-warn";
+  note.textContent =
+    `${count} stint${count === 1 ? "" : "s"} came out shorter than your ${minStint}' minimum ` +
+    `(shortest ${shortest}'). Max bench time is a hard limit, so it wins when a position has ` +
+    `more players than the bench cap can cycle through. Raise "Max bench", or move a player ` +
+    `off that position, to give everyone longer runs.`;
 }
 
 function posColor(positions) {

@@ -4,7 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
 <title>Field Hockey Manager</title>
-<link rel="stylesheet" href="css/styles.css?v=4" />
+<link rel="stylesheet" href="css/styles.css?v=5" />
 </head>
 <body>
 <header class="app-header">
@@ -53,9 +53,13 @@
         <input id="targetoff-input" type="number" min="1" max="15" step="1" />
         <small>The break length the rotation aims for when it can.</small>
       </label>
-      <label>Min starter time (min)
+      <label>Min stint (min)
         <input id="minstart-input" type="number" min="0" max="15" step="1" />
-        <small>Starting lineup won't be routinely subbed before playing this long.</small>
+        <small>No routine sub cuts a stint shorter than this.</small>
+      </label>
+      <label>Max stint (min)
+        <input id="maxstint-input" type="number" min="0" max="90" step="1" />
+        <small>Longest a player stays on before a forced sub. 0 = no limit.</small>
       </label>
     </div>
     <p class="caption" id="match-length-caption"></p>
@@ -95,6 +99,7 @@
     <div id="sheet-results" hidden>
       <div id="print-header" class="print-header"></div>
       <p id="sanity-banner" class="no-print"></p>
+      <p id="stint-note" class="no-print" hidden></p>
 
       <div id="gantt-container" class="gantt-container"></div>
 
@@ -137,6 +142,6 @@
   <p>Data is stored only in this browser (localStorage) — nothing is sent anywhere.</p>
 </footer>
 
-<script type="module" src="js/main.js?v=4"></script>
+<script type="module" src="js/main.js?v=5"></script>
 </body>
 </html>
