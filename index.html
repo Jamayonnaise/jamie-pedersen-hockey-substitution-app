@@ -3,19 +3,34 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
-<title>Field Hockey Manager</title>
-<link rel="stylesheet" href="css/styles.css?v=5" />
+<title>Hockey Manager</title>
+<link rel="stylesheet" href="css/styles.css?v=9" />
 </head>
 <body>
 <header class="app-header">
-  <h1>🏑 Field Hockey Manager</h1>
-  <p class="subtitle">Rolling-sub rotation builder — runs entirely in your browser</p>
+  <!-- Field-hockey furniture: the shooting circle (the "D"), a stick and a ball. -->
+  <svg class="banner-mark" viewBox="96 4 224 132" preserveAspectRatio="xMaxYMid meet" aria-hidden="true" focusable="false">
+    <g fill="none" stroke="currentColor" stroke-width="3">
+      <path d="M292 4v132" opacity="0.45" />
+      <path d="M292 22a56 56 0 0 0 0 96" opacity="0.6" />
+      <path d="M292 56h-18v28h18" opacity="0.75" />
+    </g>
+    <g class="banner-stick" stroke="currentColor" stroke-width="11" stroke-linecap="round" fill="none">
+      <path d="M158 20l26 70" />
+      <path d="M184 90a23 23 0 0 1-39 14" />
+    </g>
+    <circle class="banner-ball" cx="118" cy="112" r="10" fill="currentColor" />
+  </svg>
+  <div class="app-header-inner">
+    <h1>Hockey Manager</h1>
+    <p class="subtitle">Rolling-sub rotation builder — runs entirely in your browser</p>
+  </div>
 </header>
 
 <nav class="tabs" role="tablist">
-  <button class="tab-btn active" data-tab="squad" role="tab" aria-selected="true">① Squad</button>
-  <button class="tab-btn" data-tab="setup" role="tab" aria-selected="false">② Match setup</button>
-  <button class="tab-btn" data-tab="sheet" role="tab" aria-selected="false">③ Sub sheet</button>
+  <button class="tab-btn active" data-tab="squad" role="tab" aria-selected="true"><span class="tab-num">1</span>Squad</button>
+  <button class="tab-btn" data-tab="setup" role="tab" aria-selected="false"><span class="tab-num">2</span>Match setup</button>
+  <button class="tab-btn" data-tab="sheet" role="tab" aria-selected="false"><span class="tab-num">3</span>Sub sheet</button>
 </nav>
 
 <main>
@@ -24,7 +39,7 @@
     <h2>Today's squad</h2>
     <div class="add-player-row">
       <input id="new-player-name" type="text" placeholder="e.g. Tobi Smith" />
-      <button id="add-player-btn" class="btn primary">➕ Add</button>
+      <button id="add-player-btn" class="btn primary">Add</button>
     </div>
     <div class="button-row">
       <button id="load-test-squad-btn" class="btn">Load 16-player test squad</button>
@@ -70,13 +85,13 @@
       subs. Set how many play at once, and whether it <strong>rolls</strong> (frequent rolling subs)
       or <strong>splits</strong> evenly (e.g. keepers).</p>
     <div id="positions-table" class="editable-table"></div>
-    <button id="add-position-btn" class="btn">➕ Add position</button>
+    <button id="add-position-btn" class="btn">Add position</button>
     <p class="caption" id="total-on-field-caption"></p>
 
     <hr />
     <h2>Match-day roster &amp; player rules</h2>
     <p class="caption">Tick who's available, assign a position, then tune individuals:
-      <strong>Start ⭐</strong> puts them in the kickoff lineup, <strong>Max min</strong> caps an
+      <strong>Start</strong> puts them in the kickoff lineup, <strong>Max min</strong> caps an
       injured/load-managed player, <strong>Weight</strong> gives a key player a bigger share of
       playing time (1 = normal, higher = more), <strong>Lock</strong> keeps an iron player on the
       whole match.</p>
@@ -89,8 +104,18 @@
   <section id="tab-sheet" class="tab-panel">
     <div class="no-print">
       <h2>Rotation</h2>
-      <button id="generate-btn" class="btn primary full-width">⚡ Generate rotation</button>
+      <button id="generate-btn" class="btn primary full-width">Generate rotation</button>
       <p id="generate-error" class="error-box" hidden></p>
+      <div id="regen-warning" class="confirm-box" role="alertdialog" aria-labelledby="regen-warning-text" hidden>
+        <p id="regen-warning-text">
+          <strong>This will discard your edits.</strong>
+          You've adjusted stints by hand — generating a new rotation replaces the whole sheet.
+        </p>
+        <div class="button-row">
+          <button id="regen-confirm-btn" class="btn danger-outline">Discard edits and regenerate</button>
+          <button id="regen-cancel-btn" class="btn">Keep my edits</button>
+        </div>
+      </div>
     </div>
 
     <p id="sheet-empty-msg" class="info-box">Set up your squad and match, then hit
@@ -100,7 +125,10 @@
       <div id="print-header" class="print-header"></div>
       <p id="sanity-banner" class="no-print"></p>
       <p id="stint-note" class="no-print" hidden></p>
+      <p id="edited-badge" class="edited-badge no-print" hidden>Edited by hand — drag a bar to adjust it further.</p>
 
+      <p class="caption drag-hint no-print">Drag a bar to move a stint; drag either end to change when it
+        starts or finishes.</p>
       <div id="gantt-container" class="gantt-container"></div>
 
       <div class="results-grid">
@@ -115,14 +143,14 @@
       </div>
 
       <div class="button-row no-print">
-        <button id="export-minutes-csv-btn" class="btn">⬇ Export minutes (CSV)</button>
-        <button id="export-timeline-csv-btn" class="btn">⬇ Export sub timeline (CSV)</button>
-        <button id="print-btn" class="btn">🖨 Print / Save as PDF</button>
+        <button id="export-minutes-csv-btn" class="btn">Export minutes (CSV)</button>
+        <button id="export-timeline-csv-btn" class="btn">Export sub timeline (CSV)</button>
+        <button id="print-btn" class="btn">Print / Save as PDF</button>
       </div>
 
       <hr class="no-print" />
       <details class="no-print">
-        <summary>✏️ Manual editor — tweak any player's stints</summary>
+        <summary>Manual editor — tweak any player's stints</summary>
         <p class="caption">Edit start/end minutes, delete a stint, or add one. Changes apply
           immediately.</p>
         <label>Player
@@ -130,8 +158,8 @@
         </label>
         <div id="manual-segments"></div>
         <div class="button-row">
-          <button id="manual-add-stint-btn" class="btn">➕ Add stint</button>
-          <button id="manual-apply-btn" class="btn primary">💾 Apply edits</button>
+          <button id="manual-add-stint-btn" class="btn">Add stint</button>
+          <button id="manual-apply-btn" class="btn primary">Apply edits</button>
         </div>
       </details>
     </div>
@@ -142,6 +170,6 @@
   <p>Data is stored only in this browser (localStorage) — nothing is sent anywhere.</p>
 </footer>
 
-<script type="module" src="js/main.js?v=5"></script>
+<script type="module" src="js/main.js?v=9"></script>
 </body>
 </html>

@@ -1,336 +1,642 @@
+/* ---------------------------------------------------------------------------
+   Design tokens. One scale each for space, radius, shadow and type, so every
+   component composes from the same values instead of ad-hoc numbers.
+   Neutrals are very slightly green-tinted to sit under the brand without
+   reading as grey plastic. Chrome stays recessive; saturated colour is
+   reserved for the chart, where it carries meaning.
+   --------------------------------------------------------------------------- */
 :root {
-  --bg: #f6f8f4;
-  --card: #ffffff;
-  --text: #14231c;
-  --muted: #5f6f66;
-  --border: #dfe7dc;
-  --primary: #16a34a;
-  --primary-dark: #0e7c38;
-  --primary-light: #dcfce7;
-  --accent: #f97316;
-  --danger: #ef4444;
-  --success-bg: #dcfce7;
-  --success-text: #166534;
-  --warn-bg: #fff3d6;
-  --warn-text: #92660b;
-  --error-bg: #fee2e2;
-  --error-text: #991b1b;
-  --info-bg: #eef2ec;
-  --radius: 10px;
-  --heading-font: ui-rounded, "SF Pro Rounded", "Segoe UI", system-ui, sans-serif;
+  --page: #f4f6f3;
+  --surface: #ffffff;
+  --surface-sunk: #eef1ee;
+
+  --ink: #16211c;
+  --ink-2: #4c5b54;
+  --ink-muted: #78877f;
+  --line: #e0e7e2;
+  --line-strong: #cbd6cf;
+
+  --brand: #16a34a;
+  --brand-dark: #0e7c38;
+  --brand-darker: #0b5c2c;
+  --brand-tint: #e7f4ec;
+
+  --danger: #b42318;
+  --danger-tint: #fdecea;
+  --ok-bg: #e7f4ec;
+  --ok-ink: #10592c;
+  --warn-bg: #fdf3d9;
+  --warn-ink: #7a5310;
+
+  /* space */
+  --s1: 4px;
+  --s2: 8px;
+  --s3: 12px;
+  --s4: 16px;
+  --s5: 24px;
+  --s6: 32px;
+
+  /* radius - deliberately modest; no pills */
+  --r-sm: 6px;
+  --r-md: 8px;
+  --r-lg: 12px;
+
+  --shadow-sm: 0 1px 2px rgba(16, 33, 26, 0.06);
+  --shadow-md: 0 2px 8px rgba(16, 33, 26, 0.08);
+  --shadow-pop: 0 8px 24px rgba(16, 33, 26, 0.16);
+
+  --ring: 0 0 0 3px rgba(22, 163, 74, 0.22);
+
+  --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --tap: 40px; /* minimum interactive height */
 }
 
 * { box-sizing: border-box; }
 
+/* Any author `display` beats the UA's `[hidden] { display: none }`, so a
+   styled element with the hidden attribute would still show. Guard it once. */
+[hidden] { display: none !important; }
+
 body {
   margin: 0;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  background: var(--bg);
-  color: var(--text);
-  line-height: 1.4;
-  padding-bottom: 2rem;
+  font-family: var(--font);
+  background: var(--page);
+  color: var(--ink);
+  line-height: 1.45;
+  padding-bottom: var(--s6);
+  -webkit-font-smoothing: antialiased;
 }
 
+/* ── Banner ───────────────────────────────────────────────────────────── */
 .app-header {
-  padding: 1.25rem 1rem 0.5rem;
-  background: linear-gradient(135deg, var(--primary-light) 0%, var(--bg) 65%);
-  border-bottom: 1px solid var(--border);
+  position: relative;
+  overflow: hidden;
+  padding: var(--s5) var(--s4);
+  background:
+    radial-gradient(120% 140% at 88% 50%, rgba(255, 255, 255, 0.15) 0%, transparent 55%),
+    linear-gradient(135deg, #0b6b30 0%, #16a34a 58%, #2fbf63 100%);
+  color: #fff;
 }
+/* Faint pitch markings: yard lines plus the shooting-circle arc. */
+.app-header::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image: repeating-linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0.08) 0 1px,
+    transparent 1px 84px
+  );
+  pointer-events: none;
+}
+.banner-mark {
+  position: absolute;
+  top: 0;
+  right: 0;
+  height: 100%;
+  width: min(46%, 340px);
+  color: rgba(255, 255, 255, 0.22);
+  pointer-events: none;
+}
+.banner-stick { stroke: rgba(255, 255, 255, 0.3); }
+.banner-ball { fill: rgba(255, 255, 255, 0.34); }
+/* The mark is decoration — on narrow screens the title needs the room. */
+@media (max-width: 560px) {
+  .banner-mark { display: none; }
+}
+.app-header-inner { position: relative; max-width: 960px; margin: 0 auto; }
 .app-header h1 {
   margin: 0;
-  font-size: 1.6rem;
-  font-family: var(--heading-font);
-  letter-spacing: -0.01em;
-  color: var(--primary-dark);
+  font-size: 1.55rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: #fff;
 }
-.subtitle { color: var(--muted); margin: 4px 0 0; font-size: 0.9rem; }
+.subtitle {
+  color: rgba(255, 255, 255, 0.85);
+  margin: var(--s1) 0 0;
+  font-size: 0.875rem;
+}
 
+/* ── Tabs: a segmented control, not pills ─────────────────────────────── */
 .tabs {
-  display: flex;
-  gap: 6px;
-  padding: 0.75rem 1rem;
-  overflow-x: auto;
   position: sticky;
   top: 0;
-  background: var(--bg);
   z-index: 10;
-  border-bottom: 1px solid var(--border);
+  display: flex;
+  gap: var(--s1);
+  max-width: 960px;
+  margin: 0 auto;
+  padding: var(--s3) var(--s4);
+  background: var(--page);
+  border-bottom: 1px solid var(--line);
+  overflow-x: auto;
 }
 .tab-btn {
   appearance: none;
   -webkit-appearance: none;
   flex: 1 1 auto;
+  min-height: var(--tap);
   white-space: nowrap;
   background: transparent;
-  border: none;
-  border-radius: 999px;
-  padding: 0.55rem 1rem;
+  border: 1px solid transparent;
+  border-radius: var(--r-md);
+  padding: var(--s2) var(--s4);
+  font: inherit;
   font-size: 0.9rem;
-  font-weight: 700;
-  color: var(--muted);
+  font-weight: 600;
+  color: var(--ink-2);
   cursor: pointer;
-  transition: background 0.15s, color 0.15s;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
 }
-.tab-btn:hover { background: var(--info-bg); }
-.tab-btn.active { color: white; background: var(--primary); box-shadow: 0 2px 8px rgba(22, 163, 74, 0.35); }
+/* Plain digit in a badge — circled numerals (①) fall back to wrong glyphs
+   on some platforms. */
+.tab-num {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 19px;
+  height: 19px;
+  margin-right: var(--s2);
+  border-radius: 50%;
+  background: var(--surface-sunk);
+  color: var(--ink-2);
+  font-size: 0.6875rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.tab-btn.active .tab-num { background: var(--brand); color: #fff; }
+.tab-btn:hover { background: var(--surface); border-color: var(--line); }
+.tab-btn:focus-visible { outline: none; box-shadow: var(--ring); }
+.tab-btn.active {
+  background: var(--surface);
+  border-color: var(--line);
+  color: var(--brand-darker);
+  box-shadow: var(--shadow-sm);
+}
 
-main { padding: 1rem; max-width: 900px; margin: 0 auto; }
+main { padding: var(--s5) var(--s4); max-width: 960px; margin: 0 auto; }
 
 .tab-panel { display: none; }
 .tab-panel.active { display: block; }
 
-h2 { font-size: 1.15rem; margin: 0.5rem 0 0.75rem; font-family: var(--heading-font); color: var(--primary-dark); }
-h3 { font-size: 1rem; margin: 0.5rem 0; font-family: var(--heading-font); }
-hr { border: none; border-top: 1px dashed var(--border); margin: 1.5rem 0; }
+/* ── Type ─────────────────────────────────────────────────────────────── */
+h2 {
+  font-size: 1.0625rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  margin: 0 0 var(--s3);
+  color: var(--ink);
+}
+h3 {
+  font-size: 0.9375rem;
+  font-weight: 700;
+  margin: 0 0 var(--s2);
+  color: var(--ink);
+}
+hr { border: none; border-top: 1px solid var(--line); margin: var(--s6) 0; }
 
-.caption { color: var(--muted); font-size: 0.85rem; }
+.caption { color: var(--ink-2); font-size: 0.8125rem; margin: 0 0 var(--s3); }
 
+/* ── Message blocks ───────────────────────────────────────────────────── */
 .info-box {
-  background: var(--info-bg);
-  border-radius: var(--radius);
-  padding: 0.75rem 1rem;
-  color: var(--muted);
-  font-size: 0.9rem;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  padding: var(--s3) var(--s4);
+  color: var(--ink-2);
+  font-size: 0.875rem;
 }
 .error-box {
-  background: var(--error-bg);
-  color: var(--error-text);
-  border-radius: var(--radius);
-  padding: 0.75rem 1rem;
-  font-size: 0.9rem;
+  background: var(--danger-tint);
+  color: var(--danger);
+  border-radius: var(--r-md);
+  padding: var(--s3) var(--s4);
+  font-size: 0.875rem;
 }
-.banner-ok {
-  background: var(--success-bg);
-  color: var(--success-text);
-  border-radius: var(--radius);
-  padding: 0.6rem 1rem;
-  font-size: 0.85rem;
+.banner-ok, .banner-warn {
+  border-radius: var(--r-md);
+  padding: var(--s3) var(--s4);
+  font-size: 0.8125rem;
   font-weight: 600;
+  margin: 0 0 var(--s3);
 }
-.banner-warn {
-  background: var(--warn-bg);
-  color: var(--warn-text);
-  border-radius: var(--radius);
-  padding: 0.6rem 1rem;
-  font-size: 0.85rem;
+.banner-ok { background: var(--ok-bg); color: var(--ok-ink); }
+.banner-warn { background: var(--warn-bg); color: var(--warn-ink); }
+
+.edited-badge {
+  display: inline-block;
+  background: var(--brand-tint);
+  color: var(--ok-ink);
+  border-radius: var(--r-sm);
+  padding: var(--s1) var(--s3);
+  font-size: 0.75rem;
   font-weight: 600;
+  margin: 0 0 var(--s3);
 }
 
+/* Destructive confirmation, shown in place rather than as a browser modal. */
+.confirm-box {
+  background: var(--warn-bg);
+  border: 1px solid #e8cf92;
+  border-radius: var(--r-md);
+  padding: var(--s3) var(--s4);
+  margin-top: var(--s3);
+  color: var(--warn-ink);
+}
+.confirm-box p { margin: 0; font-size: 0.875rem; }
+.confirm-box .button-row { margin: var(--s3) 0 0; }
+
+/* ── Form controls ────────────────────────────────────────────────────── */
 input[type="text"], input[type="number"], select {
-  font-size: 1rem;
-  padding: 0.5rem 0.6rem;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--card);
-  color: var(--text);
   width: 100%;
+  min-height: var(--tap);
+  font: inherit;
+  font-size: 0.9375rem;
+  padding: var(--s2) var(--s3);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  color: var(--ink);
+  transition: border-color 0.12s, box-shadow 0.12s;
+}
+input[type="text"]:hover, input[type="number"]:hover, select:hover {
+  border-color: var(--ink-muted);
 }
 input[type="text"]:focus, input[type="number"]:focus, select:focus {
   outline: none;
-  border-color: var(--primary);
-  box-shadow: 0 0 0 3px var(--primary-light);
+  border-color: var(--brand);
+  box-shadow: var(--ring);
 }
+input::placeholder { color: var(--ink-muted); }
 
 label {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  font-size: 0.85rem;
+  gap: var(--s1);
+  font-size: 0.75rem;
   font-weight: 600;
-  color: var(--muted);
+  letter-spacing: 0.01em;
+  color: var(--ink-2);
 }
-label small { font-weight: 400; color: var(--muted); }
+label small { font-weight: 400; color: var(--ink-muted); line-height: 1.35; }
 
+/* ── Buttons: modest 8px radius, never pills ──────────────────────────── */
 .btn {
   appearance: none;
   -webkit-appearance: none;
-  font-size: 0.95rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--s2);
+  min-height: var(--tap);
+  padding: var(--s2) var(--s4);
+  font: inherit;
+  font-size: 0.875rem;
   font-weight: 600;
-  padding: 0.6rem 1.1rem;
-  border-radius: 999px;
-  border: 1px solid var(--border);
-  background: var(--card);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  color: var(--ink);
   cursor: pointer;
-  color: var(--text);
-  transition: transform 0.05s, box-shadow 0.15s, background 0.15s;
+  box-shadow: var(--shadow-sm);
+  transition: background 0.12s, border-color 0.12s, box-shadow 0.12s;
 }
-.btn:hover { background: var(--info-bg); }
-.btn:active { transform: scale(0.98); }
+.btn:hover { background: var(--surface-sunk); border-color: var(--ink-muted); }
+.btn:active { box-shadow: none; transform: translateY(1px); }
+.btn:focus-visible { outline: none; box-shadow: var(--ring); }
+
 .btn.primary {
-  background: linear-gradient(135deg, var(--primary), var(--primary-dark));
-  color: white;
-  border-color: var(--primary-dark);
-  box-shadow: 0 2px 10px rgba(22, 163, 74, 0.3);
+  background: var(--brand);
+  border-color: var(--brand-dark);
+  color: #fff;
 }
-.btn.primary:hover { filter: brightness(1.05); }
-.btn.danger-outline { color: var(--danger); border-color: var(--danger); background: var(--card); }
-.btn.danger-outline:hover { background: var(--error-bg); }
+.btn.primary:hover { background: var(--brand-dark); border-color: var(--brand-darker); }
+
+.btn.danger-outline { color: var(--danger); }
+.btn.danger-outline:hover { background: var(--danger-tint); border-color: var(--danger); }
+
 .btn.full-width { width: 100%; }
-.btn.icon-btn { padding: 0.4rem 0.65rem; border-radius: var(--radius); }
+/* A destructive icon repeated on every row shouldn't shout — it stays quiet
+   until you reach for it, then declares itself. */
+.btn.icon-btn {
+  min-height: 34px;
+  padding: var(--s1) var(--s2);
+  box-shadow: none;
+  color: var(--ink-muted);
+  border-color: var(--line);
+}
+.btn.icon-btn:hover { color: var(--danger); background: var(--danger-tint); border-color: var(--danger); }
 
-.button-row { display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 0.75rem 0; }
+.button-row { display: flex; flex-wrap: wrap; gap: var(--s2); margin: var(--s4) 0; }
 
-.add-player-row { display: flex; gap: 0.5rem; margin-bottom: 0.75rem; }
+/* ── Squad tab ────────────────────────────────────────────────────────── */
+.add-player-row { display: flex; gap: var(--s2); margin-bottom: var(--s3); }
 .add-player-row input { flex: 1; }
 
-.squad-list { display: flex; flex-direction: column; gap: 0.4rem; margin-top: 0.5rem; }
+.squad-list { display: flex; flex-direction: column; gap: var(--s2); margin-top: var(--s4); }
 .squad-row {
   display: grid;
   grid-template-columns: 3.5rem 1fr auto;
-  gap: 0.5rem;
+  gap: var(--s2);
   align-items: center;
-  background: var(--card);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 0.4rem;
-  border-left: 4px solid var(--primary);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  padding: var(--s2);
+  box-shadow: var(--shadow-sm);
 }
+.squad-row input { font-variant-numeric: tabular-nums; }
 
+/* ── Match setup ──────────────────────────────────────────────────────── */
 .grid-4 {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 0.75rem;
-  margin-bottom: 0.5rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--s3);
+  margin-bottom: var(--s3);
 }
-@media (min-width: 640px) {
-  .grid-4 { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+/* Six settings: 3x2 reads as a tidy block, where auto-fit leaves an orphan. */
+@media (min-width: 680px) {
+  .grid-4 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
 
 .editable-table, .roster-table {
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
-  margin: 0.75rem 0;
+  gap: var(--s2);
+  margin: var(--s4) 0;
 }
 .editable-table .row-item, .roster-table .row-item {
-  background: var(--card);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 0.7rem;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  padding: var(--s3);
   display: grid;
-  gap: 0.5rem;
-  box-shadow: 0 1px 2px rgba(20, 35, 28, 0.04);
+  gap: var(--s3);
+  box-shadow: var(--shadow-sm);
 }
 .editable-table .row-item {
-  grid-template-columns: 2fr 1fr 1.2fr auto;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1.2fr) auto;
   align-items: end;
 }
-.roster-table .row-item {
-  grid-template-columns: 1fr;
-  border-left: 4px solid var(--accent);
-}
+.roster-table .row-item { grid-template-columns: minmax(0, 1fr); }
 .roster-table .roster-fields {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 0.5rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--s3);
 }
-@media (min-width: 640px) {
-  .roster-table .roster-fields { grid-template-columns: repeat(4, 1fr); }
+@media (min-width: 680px) {
+  .roster-table .roster-fields { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
-.roster-table .player-name { font-weight: 700; }
-.roster-toggles { display: flex; flex-wrap: wrap; gap: 0.5rem 1.25rem; margin-top: 0.2rem; }
-.checkbox-field { display: flex; flex-direction: row; align-items: center; gap: 0.4rem; font-size: 0.85rem; }
-.checkbox-field input { width: auto; }
-.starter-toggle { color: var(--primary-dark); font-weight: 700; }
+/* Availability gates every other setting on the row, so it reads on the
+   name line rather than sitting among the numeric fields. */
+.roster-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s3);
+  padding-bottom: var(--s2);
+  border-bottom: 1px solid var(--line);
+}
+.roster-table .player-name {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  font-weight: 700;
+  font-size: 0.9375rem;
+  min-width: 0;
+}
+.player-num {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 5px;
+  border-radius: var(--r-sm);
+  background: var(--surface-sunk);
+  color: var(--ink-2);
+  font-size: 0.6875rem;
+  font-variant-numeric: tabular-nums;
+}
+.roster-toggles { display: flex; flex-wrap: wrap; gap: var(--s2) var(--s5); }
+.checkbox-field {
+  flex-direction: row;
+  align-items: center;
+  gap: var(--s2);
+  font-size: 0.8125rem;
+  color: var(--ink);
+  cursor: pointer;
+  min-height: 28px;
+}
+.checkbox-field input { width: 17px; height: 17px; min-height: 0; accent-color: var(--brand); }
+.starter-toggle { font-weight: 700; }
 
-.starter-summary { display: flex; flex-wrap: wrap; gap: 0.4rem; margin: 0.5rem 0 1rem; }
+.starter-summary { display: flex; flex-wrap: wrap; gap: var(--s2); margin: var(--s3) 0 var(--s5); }
 .starter-chip {
-  font-size: 0.78rem;
+  font-size: 0.75rem;
   font-weight: 600;
-  padding: 0.3rem 0.65rem;
-  border-radius: 999px;
+  padding: var(--s1) var(--s3);
+  border-radius: var(--r-sm);
 }
-.starter-chip.chip-ok { background: var(--success-bg); color: var(--success-text); }
-.starter-chip.chip-warn { background: var(--warn-bg); color: var(--warn-text); }
+.starter-chip.chip-ok { background: var(--ok-bg); color: var(--ok-ink); }
+.starter-chip.chip-warn { background: var(--warn-bg); color: var(--warn-ink); }
 
+/* ── Gantt ────────────────────────────────────────────────────────────── */
 .gantt-container {
   overflow-x: auto;
-  background: var(--card);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 0.75rem;
-  margin: 0.75rem 0;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  padding: var(--s4);
+  margin: var(--s3) 0 var(--s5);
+  box-shadow: var(--shadow-sm);
 }
-.gantt-axis { position: relative; height: 20px; margin-left: 130px; border-bottom: 1px solid var(--border); }
-.gantt-axis span { position: absolute; top: 0; font-size: 11px; color: var(--muted); font-weight: 600; }
+.gantt-axis {
+  position: relative;
+  height: 18px;
+  margin-left: 132px;
+  border-bottom: 1px solid var(--line);
+}
+.gantt-axis span {
+  position: absolute;
+  top: 0;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-muted);
+}
 .gantt-axis span.axis-end { transform: translateX(-100%); }
+
+/* Identity is carried by the swatch; the label itself stays in ink. */
 .gantt-pos-label {
-  font-size: 12px;
-  font-weight: 800;
-  margin: 12px 0 4px;
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
-  letter-spacing: 0.04em;
+  color: var(--ink-2);
+  margin: var(--s4) 0 var(--s1);
 }
+.pos-swatch { width: 10px; height: 10px; border-radius: 3px; flex-shrink: 0; }
+
 .gantt-row { display: flex; align-items: center; height: 24px; }
 .gantt-name {
-  width: 130px;
+  width: 132px;
   flex-shrink: 0;
-  font-size: 12px;
+  font-size: 0.75rem;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  padding-right: 6px;
+  padding-right: var(--s2);
+  border-radius: var(--r-sm);
   cursor: default;
-  border-radius: 3px;
 }
-.gantt-name:hover, .gantt-name:focus-visible {
-  background: var(--info-bg);
-  outline: none;
+.gantt-name:hover, .gantt-name:focus-visible { background: var(--surface-sunk); outline: none; }
+.gantt-name .mins { color: var(--ink-muted); font-variant-numeric: tabular-nums; }
+
+.gantt-track {
+  position: relative;
+  height: 14px;
+  flex: 1;
+  min-width: 500px;
+  background: var(--surface-sunk);
+  border-radius: var(--r-sm);
 }
-.gantt-name .mins { color: var(--muted); }
-.gantt-track { position: relative; height: 14px; flex: 1; min-width: 500px; background: var(--info-bg); border-radius: 3px; }
-.gantt-qline { position: absolute; top: 0; width: 1px; height: 14px; background: var(--border); }
+.gantt-qline { position: absolute; top: 0; width: 1px; height: 14px; background: var(--line-strong); }
 .gantt-seg {
   position: absolute;
   top: 0;
   height: 14px;
-  border-radius: 3px;
-  opacity: 0.9;
-  cursor: pointer;
-  transition: filter 0.1s, opacity 0.1s;
+  border-radius: 4px;
+  cursor: grab;
+  /* Stop the browser panning the page when a bar is dragged on a touch screen. */
+  touch-action: none;
+  transition: filter 0.1s, box-shadow 0.1s;
 }
 .gantt-seg:hover, .gantt-seg:focus-visible {
-  opacity: 1;
-  filter: brightness(1.15);
-  outline: 2px solid var(--text);
+  filter: brightness(1.08);
+  outline: 2px solid var(--ink);
   outline-offset: 1px;
 }
+.gantt-seg.dragging {
+  cursor: grabbing;
+  filter: brightness(1.12);
+  box-shadow: var(--shadow-md);
+  z-index: 2;
+}
+
+/* Grab zones at each end, with a grip that appears on hover so the
+   resize affordance is discoverable without cluttering the chart. */
+.seg-grip {
+  position: absolute;
+  top: 0;
+  width: 10px;
+  height: 100%;
+  cursor: ew-resize;
+}
+.seg-grip-start { left: 0; }
+.seg-grip-end { right: 0; }
+.seg-grip::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  bottom: 3px;
+  width: 2px;
+  border-radius: 1px;
+  background: rgba(255, 255, 255, 0.85);
+  opacity: 0;
+  transition: opacity 0.1s;
+}
+.seg-grip-start::after { left: 2px; }
+.seg-grip-end::after { right: 2px; }
+.gantt-seg:hover .seg-grip::after,
+.gantt-seg.dragging .seg-grip::after { opacity: 1; }
+
+.drag-hint { margin-top: calc(var(--s2) * -1); }
 
 .gantt-tooltip {
   position: fixed;
   z-index: 1000;
-  background: var(--text);
-  color: white;
-  font-size: 0.78rem;
-  line-height: 1.35;
-  padding: 0.4rem 0.6rem;
-  border-radius: 6px;
-  max-width: 220px;
+  background: var(--ink);
+  color: #fff;
+  font-size: 0.75rem;
+  line-height: 1.4;
+  padding: var(--s2) var(--s3);
+  border-radius: var(--r-md);
+  max-width: 240px;
   pointer-events: none;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+  box-shadow: var(--shadow-pop);
 }
 
 .print-header { display: none; }
 
-.results-grid { display: grid; grid-template-columns: 1fr; gap: 1.5rem; }
-@media (min-width: 720px) {
-  .results-grid { grid-template-columns: 1fr 1fr; }
+/* ── Result tables ────────────────────────────────────────────────────── */
+.results-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--s5); }
+@media (min-width: 760px) {
+  .results-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
-table.data-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; background: var(--card); }
+table.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8125rem;
+  background: var(--surface);
+}
 table.data-table th, table.data-table td {
   text-align: left;
-  padding: 0.4rem 0.5rem;
-  border-bottom: 1px solid var(--border);
+  padding: var(--s2) var(--s3);
+  border-bottom: 1px solid var(--line);
 }
-table.data-table th { color: var(--muted); font-weight: 700; }
-table.data-table tbody tr:hover { background: var(--info-bg); }
-.table-scroll { overflow-x: auto; max-height: 320px; overflow-y: auto; border: 1px solid var(--border); border-radius: var(--radius); }
+table.data-table th {
+  color: var(--ink-muted);
+  font-weight: 600;
+  font-size: 0.6875rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  position: sticky;
+  top: 0;
+  background: var(--surface);
+}
+/* Numeric columns align on the decimal, so they scan as a column. */
+table.data-table td:nth-child(n + 3) { font-variant-numeric: tabular-nums; }
+table.data-table tbody tr:last-child td { border-bottom: none; }
+table.data-table tbody tr:hover { background: var(--surface-sunk); }
 
-.manual-seg-row { display: grid; grid-template-columns: 1fr 1fr auto; gap: 0.5rem; align-items: end; margin-bottom: 0.5rem; }
+.table-scroll {
+  overflow: auto;
+  max-height: 340px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+}
 
-.app-footer { text-align: center; color: var(--muted); font-size: 0.8rem; padding: 1rem; }
+/* ── Manual editor ────────────────────────────────────────────────────── */
+details > summary {
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 0.875rem;
+  padding: var(--s2) 0;
+}
+.manual-seg-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+  gap: var(--s2);
+  align-items: end;
+  margin-bottom: var(--s2);
+}
 
+.app-footer {
+  text-align: center;
+  color: var(--ink-muted);
+  font-size: 0.75rem;
+  padding: var(--s5) var(--s4) 0;
+}
+
+/* ── Print ────────────────────────────────────────────────────────────── */
 @media print {
   @page { size: landscape; margin: 10mm; }
 
@@ -344,18 +650,16 @@ table.data-table tbody tr:hover { background: var(--info-bg); }
   .no-print, .app-header, .tabs, .app-footer, .gantt-tooltip { display: none !important; }
   #tab-sheet { display: block !important; }
   .tab-panel:not(#tab-sheet) { display: none !important; }
-  body { background: white; padding-bottom: 0; }
+  body { background: #fff; padding-bottom: 0; }
   /* Chrome's print dialog can override @page margin (e.g. "Margins: None"),
      which pushes the Gantt flush to the paper edge where printers physically
      cannot print. Keep our own gutter so the chart survives any setting. */
   main { max-width: none; padding: 0 5mm; }
-  /* The last bar ends exactly at the track's right edge, so leave room for
-     it and the FT label rather than running them into the trim. */
   .gantt-container { padding-right: 4mm !important; }
 
-  .print-header { display: block; margin-bottom: 0.6rem; }
-  .print-header h2 { margin: 0 0 2px; color: black; }
-  .print-header p { margin: 0; color: #444; font-size: 0.8rem; }
+  .print-header { display: block; margin-bottom: var(--s3); }
+  .print-header h2 { margin: 0 0 2px; color: #000; font-size: 1.1rem; }
+  .print-header p { margin: 0; color: #444; font-size: 0.75rem; }
 
   .gantt-container {
     overflow: visible;
@@ -363,28 +667,27 @@ table.data-table tbody tr:hover { background: var(--info-bg); }
     padding: 0;
     box-shadow: none;
     break-inside: avoid;
+    margin-bottom: var(--s4);
   }
+  .gantt-track { min-width: 0; outline: 1px solid #d5ddd2; }
   /* Print rows tighter so a big squad still fits one page. */
   .gantt-row { height: 20px; }
-  .gantt-pos-label { margin: 8px 0 3px; }
-  .gantt-track { min-width: 0; }
-  .gantt-seg { opacity: 1; }
-  /* Keep a hairline on the track so the chart still reads on a mono printer. */
-  .gantt-track { outline: 1px solid #d5ddd2; }
+  .gantt-pos-label { margin: var(--s3) 0 var(--s1); }
 
   /* Side-by-side columns leave a dead half-page once the short minutes table
      ends and the long sub timeline keeps flowing — stack them for print. */
   .results-grid { display: block; }
-  .results-grid > div + div { margin-top: 1rem; }
+  .results-grid > div + div { margin-top: var(--s4); }
   /* The minutes table is short, so keep it whole. The sub timeline can be
      taller than a page on its own, so let it flow instead of leaving a
      mostly-blank page behind when it refuses to split. */
   .results-grid > div:first-child { break-inside: avoid; }
 
   h3 { break-after: avoid; }
-  .table-scroll { max-height: none; overflow: visible; border: none; }
+  .table-scroll { max-height: none; overflow: visible; border: none; box-shadow: none; }
   table.data-table { break-inside: auto; font-size: 0.72rem; }
   table.data-table thead { display: table-header-group; }
+  table.data-table th { position: static; }
   table.data-table tr { break-inside: avoid; }
   table.data-table tbody tr:hover { background: none; }
   /* Every cell here is a short value, so never wrap one onto a second line —

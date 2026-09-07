@@ -42,6 +42,17 @@ it a true "clone the repo and open it" static site.
   for their total minutes/stint count), a minutes-played summary, and a
   sub-by-sub timeline, all exportable as CSV or printable to PDF via the
   browser's print dialog.
+- **Drag to adjust** — drag a bar to move a stint, or drag either end to
+  change when it starts or finishes; it snaps to whole minutes and works with
+  touch. Overlapping stints for one player merge into one. Hand edits can
+  legitimately break the on-field count, so the sheet reports that rather
+  than silently correcting it.
+- **Edit protection** — once a sheet has been hand-adjusted, regenerating
+  asks before discarding the changes.
+- **Test squad** — the 16-player sample squad is spread across your current
+  positions automatically (each position gets its on-field count, spares go
+  round-robin for depth), so it's ready to generate without a trip to the
+  roster.
 
 ## Algorithm
 
@@ -90,6 +101,19 @@ exactly:
 One intentional behavior change from the source: the original only offered
 three fixed priority tiers (Normal/More/Lots → 1×/2×/4×). This version lets
 you enter any numeric weight.
+
+## Position colours
+
+The Gantt's categorical palette is validated, not chosen by eye — the slots
+are assigned in fixed order and never cycled (a 9th position takes a neutral
+grey rather than repeating slot 1). The previous ad-hoc palette failed the
+checks: red vs orange measured ΔE 10.4, below the 15 normal-vision floor,
+meaning two positions were hard to tell apart even with full colour vision,
+and blue vs magenta sat at 5.3 under protanopia. If you change these hexes,
+re-run the validator rather than trusting the preview.
+
+Identity is carried by a colour swatch next to each position name, with the
+label itself in ink — small coloured text is where contrast falls down.
 
 ## Printing / PDF export
 
@@ -153,6 +177,15 @@ Then open `http://localhost:8000` (or whatever port your server prints).
    within a minute or two — refresh the Pages settings page for the link.
 
 No build step is needed — GitHub Pages serves the static files as-is.
+
+## Cache busting
+
+GitHub Pages serves plain filenames with no cache busting, so browsers will
+happily keep serving a stale `styles.css` / `main.js` after a deploy. The
+stylesheet, the entry script and its module imports all carry a `?v=N` query
+— **bump it whenever you change those files, and only once the edits are
+finished** (bumping first, then editing, caches the new version string
+against stale content).
 
 ## Project structure
 

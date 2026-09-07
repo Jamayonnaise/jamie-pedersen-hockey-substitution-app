@@ -1,6 +1,6 @@
-import { getState, updateState, newId, PALETTE, TEST_SQUAD_NAMES } from "./storage.js?v=5";
-import { buildSchedule, subEvents, onFieldCounts, mergeSegs, qClock, firstName } from "./scheduler.js?v=5";
-import { downloadCsv } from "./export.js?v=5";
+import { getState, updateState, newId, PALETTE, PALETTE_OTHER, TEST_SQUAD_NAMES } from "./storage.js?v=9";
+import { buildSchedule, subEvents, onFieldCounts, mergeSegs, qClock, firstName } from "./scheduler.js?v=9";
+import { downloadCsv } from "./export.js?v=9";
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
@@ -53,6 +53,54 @@ function rosterFor(playerId) {
     starter: false,
   };
   return { ...defaults, ...(s.roster[playerId] || {}) };
+}
+
+/**
+ * Spread the squad across the current positions so a freshly loaded test squad
+ * is ready to generate without visiting the roster first. Each position gets
+ * its on-field count, then the spare players go round-robin for rotation
+ * depth — except split positions (keepers), which only need one extra to make
+ * a sensible half-and-half.
+ */
+function autoAssignPositions() {
+  const positions = activePositions();
+  if (!positions.length) return;
+
+  const quota = positions.map((p) => Math.max(1, Number(p.onField) || 1));
+  const capOf = positions.map((p, i) => (p.mode === "split" ? quota[i] + 1 : Infinity));
+
+  const squadSize = getState().squad.length;
+  let assigned = quota.reduce((a, b) => a + b, 0);
+  for (let guard = 0; assigned < squadSize && guard < 200; guard++) {
+    let placedThisRound = false;
+    for (let i = 0; i < positions.length && assigned < squadSize; i++) {
+      if (quota[i] >= capOf[i]) continue;
+      quota[i] += 1;
+      assigned += 1;
+      placedThisRound = true;
+    }
+    if (!placedThisRound) break; // every position is capped
+  }
+
+  const order = [];
+  positions.forEach((p, i) => {
+    for (let n = 0; n < quota[i]; n++) order.push(p.name);
+  });
+
+  updateState((s) => {
+    s.squad.forEach((p, i) => {
+      const base = s.roster[p.id] || {};
+      s.roster[p.id] = {
+        available: true,
+        maxMin: null,
+        weight: 1,
+        lock: false,
+        starter: false,
+        ...base,
+        position: order[i] ?? order[order.length - 1] ?? positions[0].name,
+      };
+    });
+  });
 }
 
 // ─────────────────────────── Squad tab ───────────────────────────
@@ -115,7 +163,9 @@ function initSquadTab() {
       s.squad = TEST_SQUAD_NAMES.map((n, i) => ({ id: newId(), name: n, number: String(i + 1) }));
       s.schedule = null;
       s.assign = null;
+      s.scheduleEdited = false;
     });
+    autoAssignPositions();
     renderAll();
   });
 
@@ -271,9 +321,11 @@ function renderRoster() {
       const r = rosterFor(p.id);
       return `
     <div class="row-item" data-id="${p.id}">
-      <div class="player-name">${escapeHtml(p.number)}  ${escapeHtml(p.name)}</div>
-      <div class="roster-fields">
+      <div class="roster-head">
+        <span class="player-name"><span class="player-num">${escapeHtml(p.number)}</span>${escapeHtml(p.name)}</span>
         <label class="checkbox-field"><input type="checkbox" class="r-available" ${r.available ? "checked" : ""} /> In squad</label>
+      </div>
+      <div class="roster-fields">
         <label>Position
           <select class="r-position">
             ${posNames.map((n) => `<option value="${escapeHtml(n)}" ${n === r.position ? "selected" : ""}>${escapeHtml(n)}</option>`).join("")}
@@ -287,8 +339,8 @@ function renderRoster() {
         </label>
       </div>
       <div class="roster-toggles">
-        <label class="checkbox-field starter-toggle"><input type="checkbox" class="r-starter" ${r.starter ? "checked" : ""} /> ⭐ Start on field</label>
-        <label class="checkbox-field"><input type="checkbox" class="r-lock" ${r.lock ? "checked" : ""} /> 🔒 Lock on (never subbed off)</label>
+        <label class="checkbox-field starter-toggle"><input type="checkbox" class="r-starter" ${r.starter ? "checked" : ""} /> Start on field</label>
+        <label class="checkbox-field"><input type="checkbox" class="r-lock" ${r.lock ? "checked" : ""} /> Lock on (never subbed off)</label>
       </div>
     </div>`;
     })
@@ -369,6 +421,7 @@ function initGanttTooltip() {
   const container = $("#gantt-container");
 
   container.addEventListener("mousemove", (e) => {
+    if (drag) return; // the drag handler owns the tooltip mid-drag
     const html = ganttTooltipHtml(e.target);
     if (html) showGanttTooltip(html, e.clientX, e.clientY);
     else hideGanttTooltip();
@@ -402,6 +455,117 @@ function initGanttTooltip() {
 
   document.addEventListener("click", (e) => {
     if (!container.contains(e.target)) hideGanttTooltip();
+  });
+}
+
+// ─────────────────────────── Dragging stints ──────────────────────────
+// A stint bar can be moved whole, or have either end pulled, snapping to whole
+// minutes. The commit happens once on release so the tables and the on-field
+// count are recalculated a single time rather than on every pointer move.
+const EDGE_GRAB_PX = 10;
+let drag = null;
+
+function minutesPerPixel(track, total) {
+  const w = track.getBoundingClientRect().width;
+  return w > 0 ? total / w : 0;
+}
+
+function ganttPointerDown(e) {
+  const seg = e.target.closest(".gantt-seg");
+  if (!seg || e.button > 0) return;
+
+  const track = seg.parentElement;
+  const rect = seg.getBoundingClientRect();
+  const total = getState().match.periods * getState().match.perLen;
+
+  const nearStart = e.clientX - rect.left <= EDGE_GRAB_PX;
+  const nearEnd = rect.right - e.clientX <= EDGE_GRAB_PX;
+  // On a very short bar the two edge zones would overlap and swallow "move",
+  // so the wider half wins.
+  const mode = rect.width < EDGE_GRAB_PX * 2.5
+    ? (nearStart && !nearEnd ? "start" : nearEnd && !nearStart ? "end" : "move")
+    : nearStart ? "start" : nearEnd ? "end" : "move";
+
+  drag = {
+    seg,
+    track,
+    total,
+    mode,
+    pid: seg.dataset.pid,
+    idx: Number(seg.dataset.idx),
+    startX: e.clientX,
+    origStart: Number(seg.dataset.start),
+    origEnd: Number(seg.dataset.end),
+    mpp: minutesPerPixel(track, total),
+    moved: false,
+  };
+
+  seg.setPointerCapture(e.pointerId);
+  seg.classList.add("dragging");
+  hideGanttTooltip();
+  e.preventDefault();
+}
+
+function dragValues(e) {
+  const deltaMin = Math.round((e.clientX - drag.startX) * drag.mpp);
+  let { origStart: start, origEnd: end } = drag;
+
+  if (drag.mode === "move") {
+    const span = end - start;
+    start = Math.min(Math.max(0, start + deltaMin), drag.total - span);
+    end = start + span;
+  } else if (drag.mode === "start") {
+    start = Math.min(Math.max(0, start + deltaMin), end - 1);
+  } else {
+    end = Math.max(Math.min(drag.total, end + deltaMin), start + 1);
+  }
+  return [start, end];
+}
+
+function ganttPointerMove(e) {
+  if (!drag) return;
+  const [start, end] = dragValues(e);
+  if (start !== drag.origStart || end !== drag.origEnd) drag.moved = true;
+
+  drag.seg.style.left = `${(start / drag.total) * 100}%`;
+  drag.seg.style.width = `${((end - start) / drag.total) * 100}%`;
+  showGanttTooltip(
+    `<strong>${escapeHtml(drag.seg.dataset.name)}</strong><br>On ${start}' → Off ${end}' (${end - start} min)`,
+    e.clientX,
+    e.clientY
+  );
+}
+
+function ganttPointerUp(e) {
+  if (!drag) return;
+  const { pid, idx, moved } = drag;
+  const [start, end] = dragValues(e);
+  drag.seg.classList.remove("dragging");
+  hideGanttTooltip();
+  drag = null;
+
+  if (!moved) return; // a plain click, not a drag
+
+  updateState((s) => {
+    const segs = (s.schedule[pid] || []).map((seg) => seg.slice());
+    if (!segs[idx]) return;
+    segs[idx] = [start, end];
+    // Overlapping stints for one player are not two stints — merge them.
+    s.schedule[pid] = mergeSegs(segs);
+  });
+  markScheduleEdited();
+  renderSheet();
+}
+
+function initGanttDrag() {
+  const container = $("#gantt-container");
+  container.addEventListener("pointerdown", ganttPointerDown);
+  container.addEventListener("pointermove", ganttPointerMove);
+  container.addEventListener("pointerup", ganttPointerUp);
+  container.addEventListener("pointercancel", () => {
+    if (drag) { drag.seg.classList.remove("dragging"); drag = null; }
+    hideGanttTooltip();
+    renderSheet();
   });
 }
 
@@ -443,9 +607,36 @@ function generateRotation() {
   updateState((s) => {
     s.schedule = schedule;
     s.assign = assign;
+    s.scheduleEdited = false;
   });
 
+  hideRegenWarning();
   renderSheet();
+}
+
+/**
+ * Regenerating throws away hand-tuned stints, so ask first — but only when
+ * there is actually something to lose.
+ */
+function requestGenerate() {
+  const s = getState();
+  if (s.schedule && s.scheduleEdited) {
+    $("#regen-warning").hidden = false;
+    $("#regen-warning").scrollIntoView({ block: "nearest", behavior: "smooth" });
+    return;
+  }
+  generateRotation();
+}
+
+function hideRegenWarning() {
+  $("#regen-warning").hidden = true;
+}
+
+/** Called by every hand-edit path so the warning knows there is work to lose. */
+function markScheduleEdited() {
+  updateState((s) => { s.scheduleEdited = true; });
+  const badge = $("#edited-badge");
+  if (badge) badge.hidden = false;
 }
 
 function renderSheet() {
@@ -462,8 +653,10 @@ function renderSheet() {
   const schedule = s.schedule;
   const squadById = Object.fromEntries(s.squad.map((p) => [p.id, p]));
 
+  $("#edited-badge").hidden = !s.scheduleEdited;
+
   const stintNote = s.match.maxStint > 0 ? ` · max stint ${s.match.maxStint}'` : "";
-  $("#print-header").innerHTML = `<h2>🏑 Field Hockey Manager — Sub Sheet</h2>
+  $("#print-header").innerHTML = `<h2>Hockey Manager — Sub Sheet</h2>
     <p>${s.match.periods} × ${s.match.perLen} min (${total} min total) ·
     max bench ${s.match.maxOff}' · target break ${s.match.targetOff}' ·
     min stint ${s.match.minStart}'${stintNote} ·
@@ -521,9 +714,11 @@ function renderStintNote(schedule) {
     `off that position, to give everyone longer runs.`;
 }
 
+// Slots are assigned in fixed order and never cycled — a 9th position would
+// otherwise repeat slot 1's hue and read as the same position on the chart.
 function posColor(positions) {
   const map = {};
-  positions.forEach((p, i) => { map[p.name] = PALETTE[i % PALETTE.length]; });
+  positions.forEach((p, i) => { map[p.name] = PALETTE[i] ?? PALETTE_OTHER; });
   return map;
 }
 
@@ -544,7 +739,9 @@ function renderGantt(schedule, assign, positions, total, periods, qmins) {
     if (!members.length) continue;
     const squad = getState().squad;
     const orderedMembers = squad.filter((p) => members.includes(p.id));
-    html += `<div class="gantt-pos-label" style="color:${colors[pos.name]}">${escapeHtml(pos.name)}</div>`;
+    html += `<div class="gantt-pos-label">
+      <span class="pos-swatch" style="background:${colors[pos.name]}"></span>${escapeHtml(pos.name)}
+    </div>`;
     for (const p of orderedMembers) {
       const segs = schedule[p.id] || [];
       const mins = segs.reduce((sum, [s, e]) => sum + (e - s), 0);
@@ -561,14 +758,17 @@ function renderGantt(schedule, assign, positions, total, periods, qmins) {
         const leftPct = ((q * qmins) / total) * 100;
         html += `<div class="gantt-qline" style="left:${leftPct}%"></div>`;
       }
-      for (const [s, e] of segs) {
+      segs.forEach(([s, e], segIdx) => {
         const leftPct = (s / total) * 100;
         const widthPct = ((e - s) / total) * 100;
         html += `<div class="gantt-seg" tabindex="0" style="left:${leftPct}%;width:${widthPct}%;background:${colors[pos.name]}"
                    data-name="${escapeHtml(name)}" data-pos="${escapeHtml(pos.name)}"
+                   data-pid="${p.id}" data-idx="${segIdx}"
                    data-start="${s}" data-end="${e}"
-                   aria-label="${escapeHtml(name)}, ${escapeHtml(pos.name)}, on field from minute ${s} to ${e}, ${e - s} minute stint"></div>`;
-      }
+                   aria-label="${escapeHtml(name)}, ${escapeHtml(pos.name)}, on field from minute ${s} to ${e}, ${e - s} minute stint. Drag to adjust."
+                 ><span class="seg-grip seg-grip-start" aria-hidden="true"></span
+                 ><span class="seg-grip seg-grip-end" aria-hidden="true"></span></div>`;
+      });
       html += `</div></div>`;
     }
   }
@@ -641,7 +841,7 @@ function renderManualSegments() {
     <div class="manual-seg-row" data-idx="${i}">
       <label>On <input type="number" class="seg-start" min="0" max="${total}" value="${seg[0]}" /></label>
       <label>Off <input type="number" class="seg-end" min="0" max="${total}" value="${seg[1]}" /></label>
-      <button class="btn danger-outline icon-btn seg-delete" title="Delete stint">🗑</button>
+      <button class="btn danger-outline icon-btn seg-delete" title="Delete stint">✕</button>
     </div>`
     )
     .join("");
@@ -662,6 +862,7 @@ function renderManualSegments() {
       const segsNow = getState().schedule[who].slice();
       segsNow.splice(idx, 1);
       updateState((s) => { s.schedule[who] = mergeSegs(segsNow); });
+      markScheduleEdited();
       renderSheet();
     });
   });
@@ -677,6 +878,7 @@ function initManualEditor() {
     const segsNow = (s.schedule[who] || []).slice();
     segsNow.push([0, Math.min(total, 5)]);
     updateState((s) => { s.schedule[who] = segsNow; });
+    markScheduleEdited();
     renderManualSegments();
   });
   $("#manual-apply-btn").addEventListener("click", () => {
@@ -684,13 +886,16 @@ function initManualEditor() {
     if (!who) return;
     const segsNow = getState().schedule[who] || [];
     updateState((s) => { s.schedule[who] = mergeSegs(segsNow); });
+    markScheduleEdited();
     renderSheet();
   });
 }
 
 // ─────────────────────────── Export / print ───────────────────────────
 function initExport() {
-  $("#generate-btn").addEventListener("click", generateRotation);
+  $("#generate-btn").addEventListener("click", requestGenerate);
+  $("#regen-confirm-btn").addEventListener("click", generateRotation);
+  $("#regen-cancel-btn").addEventListener("click", hideRegenWarning);
 
   $("#export-minutes-csv-btn").addEventListener("click", () => {
     const rows = JSON.parse($("#minutes-table").dataset.rows || "[]");
@@ -719,6 +924,7 @@ function init() {
   initManualEditor();
   initExport();
   initGanttTooltip();
+  initGanttDrag();
   renderAll();
 }
 
