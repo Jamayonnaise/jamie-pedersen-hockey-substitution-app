@@ -1,6 +1,6 @@
-import { getState, updateState, newId, PALETTE, PALETTE_OTHER, TEST_SQUAD_NAMES } from "./storage.js?v=10";
-import { buildSchedule, subEvents, onFieldCounts, mergeSegs, qClock, firstName } from "./scheduler.js?v=10";
-import { downloadCsv } from "./export.js?v=10";
+import { getState, updateState, newId, PALETTE, PALETTE_OTHER, TEST_SQUAD_NAMES } from "./storage.js?v=12";
+import { buildSchedule, subEvents, onFieldCounts, mergeSegs, qClock, firstName } from "./scheduler.js?v=12";
+import { downloadCsv } from "./export.js?v=12";
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
@@ -707,25 +707,55 @@ function renderSanity(schedule, positions, total) {
 function renderStintNote(schedule) {
   const s = getState();
   const minStint = s.match.minStart || 0;
+  const maxStint = s.match.maxStint || 0;
+  const assign = s.assign || {};
   const note = $("#stint-note");
-  if (!minStint) { note.hidden = true; return; }
 
-  let shortest = Infinity, count = 0;
-  for (const segs of Object.values(schedule)) {
+  let shortest = Infinity, shortCount = 0;
+  let longest = 0, longCount = 0;
+  const longPositions = new Set();
+
+  // Split positions (keepers taking a half each) deliberately ignore the stint
+  // rules, so counting their blocks as breaches would be noise.
+  const splitPositions = new Set(
+    activePositions().filter((p) => p.mode === "split").map((p) => p.name)
+  );
+
+  for (const [pid, segs] of Object.entries(schedule)) {
+    if (splitPositions.has(assign[pid])) continue;
     for (const [start, end] of segs) {
       const dur = end - start;
-      if (dur < minStint) { count += 1; shortest = Math.min(shortest, dur); }
+      if (minStint && dur < minStint) { shortCount += 1; shortest = Math.min(shortest, dur); }
+      if (maxStint && dur > maxStint) {
+        longCount += 1;
+        longest = Math.max(longest, dur);
+        if (assign[pid]) longPositions.add(assign[pid]);
+      }
     }
   }
-  if (!count) { note.hidden = true; return; }
 
+  const parts = [];
+  if (shortCount) {
+    parts.push(
+      `${shortCount} stint${shortCount === 1 ? "" : "s"} came out shorter than your ${minStint}' ` +
+      `minimum (shortest ${shortest}'). Max bench time is a hard limit, so it wins when a position ` +
+      `has more players than the bench cap can cycle through — raise "Max bench", or move a player ` +
+      `off that position.`
+    );
+  }
+  if (longCount) {
+    parts.push(
+      `${longCount} stint${longCount === 1 ? "" : "s"} ran past your ${maxStint}' maximum ` +
+      `(longest ${longest}') in ${[...longPositions].join(", ")}. A player can only come off if ` +
+      `someone is free to replace them, so a thin bench delays the swap — add a player to that ` +
+      `position, or allow a longer max stint.`
+    );
+  }
+
+  if (!parts.length) { note.hidden = true; return; }
   note.hidden = false;
   note.className = "banner-warn";
-  note.textContent =
-    `${count} stint${count === 1 ? "" : "s"} came out shorter than your ${minStint}' minimum ` +
-    `(shortest ${shortest}'). Max bench time is a hard limit, so it wins when a position has ` +
-    `more players than the bench cap can cycle through. Raise "Max bench", or move a player ` +
-    `off that position, to give everyone longer runs.`;
+  note.textContent = parts.join(" ");
 }
 
 // Slots are assigned in fixed order and never cycled — a 9th position would

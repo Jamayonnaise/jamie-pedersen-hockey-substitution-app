@@ -137,10 +137,17 @@ export function schedulePosition(players, slots, total, maxOff, targetOff, group
     on.splice(on.indexOf(p), 1);
     bench.push(p);
     close(p, m);
+    benchedThisMinute.add(p);
     if (retire) active.delete(p);
   };
+  // Anyone benched earlier in the current minute. Without this a player taken
+  // off by one rule is immediately eligible to come back on under another in
+  // the same minute — they never actually leave the field, and mergeSegs
+  // correctly fuses the two segments into one over-long stint.
+  let benchedThisMinute = new Set();
+
   const comer = () => {
-    const pool = bench.filter((q) => active.has(q) && underCap(q));
+    const pool = bench.filter((q) => active.has(q) && underCap(q) && !benchedThisMinute.has(q));
     return pool.length ? argMaxFirst(pool, (q) => offRun[q]) : null;
   };
   // No stint — the opening kickoff stint or any later one — may be cut short by a
@@ -164,6 +171,7 @@ export function schedulePosition(players, slots, total, maxOff, targetOff, group
   };
 
   for (let minute = 0; minute <= total; minute++) {
+    benchedThisMinute = new Set();
     // 1) cap-outs: anyone who hit their max retires; replacement comes on.
     for (const p of on.filter((q) => caps[q] != null && onTime[q] >= caps[q])) {
       const rep = comer();
@@ -193,16 +201,10 @@ export function schedulePosition(players, slots, total, maxOff, targetOff, group
     // Needs a replacement to keep the on-field count exact, and stops near
     // full-time so it can't manufacture a stint shorter than minStart.
     if (stintCap > 0 && minute > 0 && minute < total && total - minute >= minStart) {
-      // Whoever we bench this minute must not be picked straight back on as
-      // someone else's replacement — they would never actually leave the
-      // field and the two stints would merge into one long one.
-      const justOff = new Set();
       for (const p of on.filter((q) => stintElapsed(q, minute) >= stintCap)) {
-        const pool = bench.filter((q) => active.has(q) && underCap(q) && !justOff.has(q));
-        const rep = pool.length ? argMaxFirst(pool, (q) => offRun[q]) : null;
+        const rep = comer(); // already excludes anyone benched this minute
         if (rep != null) {
           takeOff(p, minute);
-          justOff.add(p);
           putOn(rep, minute);
         }
       }

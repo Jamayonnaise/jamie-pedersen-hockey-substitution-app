@@ -83,15 +83,24 @@ exactly:
   max-bench-time guarantee — if a coach sets `max bench` below the minimum
   stint length, the bench-time guarantee wins and a player can be subbed
   early to keep someone else from breaching their hard cap.
-- **Maximum stint length** (optional, new) forces a player off once they have
-  been on that long, taking the longest-benched substitute in return. Unlike
-  max bench time it is *best-effort, not a hard guarantee*, and can overrun by
-  a minute or two in two unavoidable cases: near full-time, where breaking the
-  stint would create one shorter than the minimum; and when several on-field
-  players in a position hit the cap in the same minute but the bench is too
-  shallow to replace them all at once (e.g. 6 players for 4 slots). Both are
-  bounded — the cap is applied as soon as a substitute is actually free. A max
-  stint below the min stint is self-contradictory, so the minimum wins.
+- **Maximum stint length** (optional) forces a player off once they have been
+  on that long, taking the longest-benched substitute in return. Unlike max
+  bench time it is *best-effort, not a hard guarantee*: a player can only come
+  off if someone is free to replace them, so a thin bench delays the swap. In
+  a sweep of 180 position configurations the overrun never exceeded 2 minutes.
+  The sheet reports any overrun explicitly rather than leaving it to be
+  spotted by eye. A max stint below the min stint is self-contradictory, so
+  the minimum wins.
+
+**No player may be substituted off and back on within the same minute.** Each
+rule (cap-out, forced return, max-stint exit, routine wave) runs in turn
+within a minute, and without this guard one rule could bench a player and the
+next could immediately pick them as the only available replacement. They never
+actually leave the field, and `mergeSegs` correctly fuses the two touching
+segments into one — which surfaced as stints running to 21 minutes under a
+9-minute cap, and as identically-configured positions behaving differently
+depending on whether their stagger offset happened to land a wave on the same
+minute as a forced exit.
 - **Starting lineup** is also new: the source algorithm always picked the
   starting XI implicitly (first N players in squad order per position).
   Ticking "Start on field" for specific players now controls this directly —
