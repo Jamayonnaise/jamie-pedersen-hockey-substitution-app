@@ -1,6 +1,6 @@
-import { getState, updateState, newId, PALETTE, PALETTE_OTHER, TEST_SQUAD_NAMES } from "./storage.js?v=9";
-import { buildSchedule, subEvents, onFieldCounts, mergeSegs, qClock, firstName } from "./scheduler.js?v=9";
-import { downloadCsv } from "./export.js?v=9";
+import { getState, updateState, newId, PALETTE, PALETTE_OTHER, TEST_SQUAD_NAMES } from "./storage.js?v=10";
+import { buildSchedule, subEvents, onFieldCounts, mergeSegs, qClock, firstName } from "./scheduler.js?v=10";
+import { downloadCsv } from "./export.js?v=10";
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
@@ -27,6 +27,19 @@ function initTabs() {
 // ─────────────────────────── Helpers ───────────────────────────
 function activePositions() {
   return getState().positions.filter((p) => p.name && p.name.trim());
+}
+
+/**
+ * Drop roster rows whose player is gone. Replacing the squad (loading the test
+ * squad, clearing it) mints fresh ids, so without this the old rows linger in
+ * localStorage forever and pile up on every reload of the sample squad.
+ */
+function pruneRoster() {
+  const s = getState();
+  const ids = new Set(s.squad.map((p) => p.id));
+  const stale = Object.keys(s.roster).filter((id) => !ids.has(id));
+  if (!stale.length) return;
+  updateState((st) => { stale.forEach((id) => delete st.roster[id]); });
 }
 
 /** Make sure every roster entry points at a position that still exists. */
@@ -305,6 +318,7 @@ function initPositionsTab() {
 }
 
 function renderRoster() {
+  pruneRoster();
   fixRosterPositions();
   const s = getState();
   $("#roster-empty-msg").hidden = s.squad.length > 0;
