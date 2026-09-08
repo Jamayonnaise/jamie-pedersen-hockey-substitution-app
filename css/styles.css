@@ -455,7 +455,8 @@ label small { font-weight: 400; color: var(--ink-muted); line-height: 1.35; }
 .gantt-axis {
   position: relative;
   height: 18px;
-  margin-left: 132px;
+  /* name column + the pin button that sits before it */
+  margin-left: 158px;
   border-bottom: 1px solid var(--line);
 }
 .gantt-axis span {
@@ -483,6 +484,27 @@ label small { font-weight: 400; color: var(--ink-muted); line-height: 1.35; }
 .pos-swatch { width: 10px; height: 10px; border-radius: 3px; flex-shrink: 0; }
 
 .gantt-row { display: flex; align-items: center; height: 24px; }
+
+.pin-btn {
+  appearance: none;
+  -webkit-appearance: none;
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  margin-right: var(--s1);
+  padding: 0;
+  border: none;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--ink-muted);
+  font-size: 0.9rem;
+  line-height: 1;
+  cursor: pointer;
+}
+.pin-btn:hover { background: var(--surface-sunk); color: var(--ink); }
+.pin-btn:focus-visible { outline: none; box-shadow: var(--ring); }
+.pin-btn.pinned { color: #b8860b; }
+@media print { .pin-btn { display: none; } }
 .gantt-name {
   width: 132px;
   flex-shrink: 0;
@@ -670,6 +692,8 @@ details > summary {
     margin-bottom: var(--s4);
   }
   .gantt-track { min-width: 0; outline: 1px solid #d5ddd2; }
+  /* Pin buttons are hidden on paper, so the axis loses their width too. */
+  .gantt-axis { margin-left: 132px; }
   /* Print rows tighter so a big squad still fits one page. */
   .gantt-row { height: 20px; }
   .gantt-pos-label { margin: var(--s3) 0 var(--s1); }

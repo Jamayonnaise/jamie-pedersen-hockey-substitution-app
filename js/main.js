@@ -1,6 +1,6 @@
-import { getState, updateState, newId, PALETTE, PALETTE_OTHER, TEST_SQUAD_NAMES } from "./storage.js?v=12";
-import { buildSchedule, subEvents, onFieldCounts, mergeSegs, qClock, firstName } from "./scheduler.js?v=12";
-import { downloadCsv } from "./export.js?v=12";
+import { getState, updateState, newId, PALETTE, PALETTE_OTHER, TEST_SQUAD_NAMES } from "./storage.js?v=13";
+import { buildSchedule, subEvents, onFieldCounts, mergeSegs, qClock, firstName, positionPlan } from "./scheduler.js?v=13";
+import { downloadCsv } from "./export.js?v=13";
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
@@ -61,7 +61,6 @@ function rosterFor(playerId) {
     available: true,
     position: names[0] || "",
     maxMin: null,
-    weight: 1,
     lock: false,
     starter: false,
   };
@@ -106,7 +105,6 @@ function autoAssignPositions() {
       s.roster[p.id] = {
         available: true,
         maxMin: null,
-        weight: 1,
         lock: false,
         starter: false,
         ...base,
@@ -197,10 +195,8 @@ function initMatchInputs() {
   const s = getState();
   $("#periods-input").value = s.match.periods;
   $("#perlen-input").value = s.match.perLen;
-  $("#maxoff-input").value = s.match.maxOff;
-  $("#targetoff-input").value = s.match.targetOff;
-  $("#minstart-input").value = s.match.minStart;
-  $("#maxstint-input").value = s.match.maxStint;
+  $("#minbreak-input").value = s.match.minBreak;
+  $("#maxbreak-input").value = s.match.maxBreak;
   updateMatchCaption();
 
   const bind = (id, key, parser = Number) => {
@@ -214,10 +210,8 @@ function initMatchInputs() {
   };
   bind("#periods-input", "periods", (v) => parseInt(v, 10));
   bind("#perlen-input", "perLen", (v) => parseInt(v, 10));
-  bind("#maxoff-input", "maxOff", (v) => parseInt(v, 10));
-  bind("#targetoff-input", "targetOff", (v) => parseInt(v, 10));
-  bind("#minstart-input", "minStart", (v) => parseInt(v, 10));
-  bind("#maxstint-input", "maxStint", (v) => parseInt(v, 10));
+  bind("#minbreak-input", "minBreak", (v) => parseInt(v, 10));
+  bind("#maxbreak-input", "maxBreak", (v) => parseInt(v, 10));
 }
 
 function updateMatchCaption() {
@@ -348,9 +342,6 @@ function renderRoster() {
         <label>Max min
           <input type="number" class="r-maxmin" min="0" max="120" step="1" value="${r.maxMin ?? ""}" placeholder="none" />
         </label>
-        <label>Weight
-          <input type="number" class="r-weight" min="0.1" step="0.1" value="${r.weight ?? 1}" />
-        </label>
       </div>
       <div class="roster-toggles">
         <label class="checkbox-field starter-toggle"><input type="checkbox" class="r-starter" ${r.starter ? "checked" : ""} /> Start on field</label>
@@ -372,10 +363,6 @@ function renderRoster() {
     row.querySelector(".r-maxmin").addEventListener("input", (e) => {
       const v = e.target.value.trim();
       save(() => ({ maxMin: v === "" ? null : Math.max(0, parseInt(v, 10) || 0) }));
-    });
-    row.querySelector(".r-weight").addEventListener("input", (e) => {
-      const v = parseFloat(e.target.value);
-      save(() => ({ weight: Number.isFinite(v) && v > 0 ? v : 1 }));
     });
     row.querySelector(".r-starter").addEventListener("change", (e) => { save(() => ({ starter: e.target.checked })); renderStarterSummary(); });
     row.querySelector(".r-lock").addEventListener("change", (e) => save(() => ({ lock: e.target.checked })));
@@ -566,9 +553,30 @@ function ganttPointerUp(e) {
     segs[idx] = [start, end];
     // Overlapping stints for one player are not two stints — merge them.
     s.schedule[pid] = mergeSegs(segs);
+    // A pin records exact stints, so keep it in step with what was just dragged.
+    if (s.pins?.[pid]?.length) s.pins[pid] = s.schedule[pid].map((seg) => seg.slice());
   });
   markScheduleEdited();
   renderSheet();
+}
+
+/**
+ * Pinning holds a player's stints exactly as they are, so a regenerate
+ * schedules the rest of the position around them. That is how a coach gives
+ * someone more (or less) than the even share.
+ */
+function initPinButtons() {
+  $("#gantt-container").addEventListener("click", (e) => {
+    const btn = e.target.closest(".pin-btn");
+    if (!btn) return;
+    const pid = btn.dataset.pin;
+    updateState((s) => {
+      s.pins = s.pins || {};
+      if (s.pins[pid]?.length) delete s.pins[pid];
+      else s.pins[pid] = (s.schedule[pid] || []).map((seg) => seg.slice());
+    });
+    renderSheet();
+  });
 }
 
 function initGanttDrag() {
@@ -597,13 +605,20 @@ function generateRotation() {
     return;
   }
 
-  const assign = {}, caps = {}, weights = {}, locks = {};
+  const assign = {}, caps = {}, locks = {};
   for (const p of available) {
     const r = rosterFor(p.id);
     assign[p.id] = r.position;
     caps[p.id] = r.maxMin ?? null;
-    weights[p.id] = r.weight ?? 1;
     locks[p.id] = !!r.lock;
+  }
+
+  // Pinned players keep the stints the coach set; everyone else is scheduled
+  // around them. Pins for players no longer available are ignored.
+  const pins = {};
+  for (const p of available) {
+    const pinned = (s.pins || {})[p.id];
+    if (pinned && pinned.length) pins[p.id] = pinned.map((seg) => seg.slice());
   }
 
   // Within each position, ticked starters go first (stable sort keeps squad
@@ -616,7 +631,7 @@ function generateRotation() {
   });
 
   const total = s.match.periods * s.match.perLen;
-  const schedule = buildSchedule(ordered, assign, positions, total, s.match.maxOff, s.match.targetOff, caps, weights, locks, s.match.minStart, s.match.maxStint);
+  const schedule = buildSchedule(ordered, assign, positions, total, s.match.minBreak, s.match.maxBreak, caps, locks, pins);
 
   updateState((s) => {
     s.schedule = schedule;
@@ -704,58 +719,46 @@ function renderSanity(schedule, positions, total) {
  * cap it can force stints below the minimum. That is correct precedence but
  * shouldn't be silent — a coach seeing 1-minute stints deserves to know why.
  */
+/**
+ * Report what each position actually got. Because break and stint are locked
+ * together by the squad size, some break windows are simply unreachable — with
+ * 8 substitutes for 4 slots, breaks can only be multiples of 8 minutes. Say so
+ * rather than quietly missing the target.
+ */
 function renderStintNote(schedule) {
   const s = getState();
-  const minStint = s.match.minStart || 0;
-  const maxStint = s.match.maxStint || 0;
-  const assign = s.assign || {};
   const note = $("#stint-note");
+  const assign = s.assign || {};
+  const { minBreak, maxBreak } = s.match;
 
-  let shortest = Infinity, shortCount = 0;
-  let longest = 0, longCount = 0;
-  const longPositions = new Set();
+  const lines = [];
+  for (const pos of activePositions()) {
+    if (pos.mode === "split") continue;
+    const members = Object.keys(assign).filter((pid) => assign[pid] === pos.name);
+    const pinnedHere = members.filter((pid) => (s.pins || {})[pid]?.length);
+    const free = members.length - pinnedHere.length;
+    const slots = Math.max(0, Number(pos.onField) - pinnedHere.length);
+    if (free <= slots || slots <= 0) continue;
 
-  // Split positions (keepers taking a half each) deliberately ignore the stint
-  // rules, so counting their blocks as breaches would be noise.
-  const splitPositions = new Set(
-    activePositions().filter((p) => p.mode === "split").map((p) => p.name)
-  );
-
-  for (const [pid, segs] of Object.entries(schedule)) {
-    if (splitPositions.has(assign[pid])) continue;
-    for (const [start, end] of segs) {
-      const dur = end - start;
-      if (minStint && dur < minStint) { shortCount += 1; shortest = Math.min(shortest, dur); }
-      if (maxStint && dur > maxStint) {
-        longCount += 1;
-        longest = Math.max(longest, dur);
-        if (assign[pid]) longPositions.add(assign[pid]);
-      }
+    const plan = positionPlan(free, slots, minBreak, maxBreak);
+    if (plan.breakLen == null) continue;
+    if (plan.breakLen < minBreak || plan.breakLen > maxBreak) {
+      lines.push(
+        `${pos.name}: ${free} players for ${slots} place${slots === 1 ? "" : "s"} means breaks ` +
+        `can only come in steps of ${free - slots} min, so the closest fit is a ${plan.breakLen}' ` +
+        `break with ${plan.stint}' stints — outside your ${minBreak}–${maxBreak}' window. ` +
+        `Adjust the window or the number of players in this position.`
+      );
     }
   }
 
-  const parts = [];
-  if (shortCount) {
-    parts.push(
-      `${shortCount} stint${shortCount === 1 ? "" : "s"} came out shorter than your ${minStint}' ` +
-      `minimum (shortest ${shortest}'). Max bench time is a hard limit, so it wins when a position ` +
-      `has more players than the bench cap can cycle through — raise "Max bench", or move a player ` +
-      `off that position.`
-    );
+  if (lines.length) {
+    note.hidden = false;
+    note.className = "banner-warn";
+    note.textContent = lines.join(" ");
+  } else {
+    note.hidden = true;
   }
-  if (longCount) {
-    parts.push(
-      `${longCount} stint${longCount === 1 ? "" : "s"} ran past your ${maxStint}' maximum ` +
-      `(longest ${longest}') in ${[...longPositions].join(", ")}. A player can only come off if ` +
-      `someone is free to replace them, so a thin bench delays the swap — add a player to that ` +
-      `position, or allow a longer max stint.`
-    );
-  }
-
-  if (!parts.length) { note.hidden = true; return; }
-  note.hidden = false;
-  note.className = "banner-warn";
-  note.textContent = parts.join(" ");
 }
 
 // Slots are assigned in fixed order and never cycled — a 9th position would
@@ -790,7 +793,11 @@ function renderGantt(schedule, assign, positions, total, periods, qmins) {
       const segs = schedule[p.id] || [];
       const mins = segs.reduce((sum, [s, e]) => sum + (e - s), 0);
       const name = firstName(p.name);
+      const isPinned = !!(getState().pins || {})[p.id]?.length;
       html += `<div class="gantt-row">
+        <button class="pin-btn${isPinned ? " pinned" : ""}" data-pin="${p.id}"
+                title="${isPinned ? "Pinned — these stints are kept when you regenerate" : "Pin these stints so a regenerate keeps them"}"
+                aria-pressed="${isPinned}" aria-label="Pin ${escapeHtml(name)}'s stints">${isPinned ? "★" : "☆"}</button>
         <div class="gantt-name" tabindex="0"
              data-name="${escapeHtml(name)}" data-pos="${escapeHtml(pos.name)}"
              data-mins="${mins}" data-stints="${segs.length}"
@@ -969,6 +976,7 @@ function init() {
   initExport();
   initGanttTooltip();
   initGanttDrag();
+  initPinButtons();
   renderAll();
 }
 

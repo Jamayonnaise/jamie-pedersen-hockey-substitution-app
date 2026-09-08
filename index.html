@@ -4,7 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
 <title>Hockey Manager</title>
-<link rel="stylesheet" href="css/styles.css?v=12" />
+<link rel="stylesheet" href="css/styles.css?v=13" />
 </head>
 <body>
 <header class="app-header">
@@ -60,23 +60,20 @@
       <label>Mins / period
         <input id="perlen-input" type="number" min="5" max="45" step="1" />
       </label>
-      <label>Max bench (min)
-        <input id="maxoff-input" type="number" min="1" max="30" step="1" />
-        <small>No player sits longer than this between stints. Hard limit.</small>
+      <label>Min break (min)
+        <input id="minbreak-input" type="number" min="1" max="20" step="1" />
+        <small>Shortest rest before a player goes back on.</small>
       </label>
-      <label>Target break (min)
-        <input id="targetoff-input" type="number" min="1" max="15" step="1" />
-        <small>The break length the rotation aims for when it can.</small>
-      </label>
-      <label>Min stint (min)
-        <input id="minstart-input" type="number" min="0" max="15" step="1" />
-        <small>No routine sub cuts a stint shorter than this.</small>
-      </label>
-      <label>Max stint (min)
-        <input id="maxstint-input" type="number" min="0" max="90" step="1" />
-        <small>Longest a player stays on before a forced sub. 0 = no limit.</small>
+      <label>Max break (min)
+        <input id="maxbreak-input" type="number" min="1" max="30" step="1" />
+        <small>Longest a player sits before coming back on.</small>
       </label>
     </div>
+    <p class="caption">Stint length isn't set directly — it follows from the break and the
+      squad size, so the two can never contradict each other. With <em>n</em> players and
+      <em>s</em> on the field each player is on <em>s/n</em> of the match, which fixes
+      <strong>break = stint × (n − s) / s</strong>. Everyone in a position gets the same
+      stint, the same break and equal minutes.</p>
     <p class="caption" id="match-length-caption"></p>
 
     <hr />
@@ -92,9 +89,9 @@
     <h2>Match-day roster &amp; player rules</h2>
     <p class="caption">Tick who's available, assign a position, then tune individuals:
       <strong>Start</strong> puts them in the kickoff lineup, <strong>Max min</strong> caps an
-      injured/load-managed player, <strong>Weight</strong> gives a key player a bigger share of
-      playing time (1 = normal, higher = more), <strong>Lock</strong> keeps an iron player on the
-      whole match.</p>
+      injured/load-managed player, <strong>Lock</strong> keeps an iron player on the whole match.
+      To give someone more time than the even share, drag their stints on the sub sheet and pin
+      them.</p>
     <p id="roster-empty-msg" class="info-box">Add players in the Squad tab first.</p>
     <div id="roster-table" class="roster-table"></div>
     <div id="starter-summary" class="starter-summary"></div>
@@ -170,6 +167,6 @@
   <p>Data is stored only in this browser (localStorage) — nothing is sent anywhere.</p>
 </footer>
 
-<script type="module" src="js/main.js?v=12"></script>
+<script type="module" src="js/main.js?v=13"></script>
 </body>
 </html>

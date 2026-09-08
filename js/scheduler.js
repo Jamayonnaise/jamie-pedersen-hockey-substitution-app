@@ -1,16 +1,21 @@
-// Rotation scheduler — ported line-for-line from the Streamlit app's
-// schedule_position / build_schedule / sub_events (streamlit_app.py).
+// Rotation scheduler — break-first.
 //
-// Behavioural invariants preserved from the source:
-//   - Max bench time is a HARD guarantee via forced return (leaverHard),
-//     independent of priority weight.
-//   - Priority weight only softens routine wave swaps (leaverSoft);
-//     it can never block a forced return or a cap-out.
-//   - Injury cap is a hard ceiling -> permanent retirement, with an
-//     emergency fallback so a slot is never left empty.
-//   - Lock removes a player from the rotation maths entirely.
-//   - Split mode ignores weight/cap/lock, exactly as upstream.
-//   - Tie-breaks match Python's max()/min(): first item hit wins ties.
+// The old scheduler applied a stack of caps reactively (min stint, max stint,
+// max bench) and let them fight: with a thin bench no cadence could satisfy
+// them all, so stints thrashed and identical positions drifted apart.
+//
+// This one solves for the rotation instead. A position's arithmetic already
+// fixes the relationship between a stint and a break — with n players and s on
+// the field, each player is on s/n of the match, so
+//
+//     break = stint × (n − s) / s
+//
+// Setting a stint length and a break length independently therefore
+// over-determines the system. Only the break is set (it is the injury-relevant
+// one), and the substitution cadence is solved from it; the stint length falls
+// out. Because every player rides the same cadence, everyone gets identical
+// stint and break lengths and equal total minutes by construction, rather than
+// by a fairness heuristic chasing its own tail.
 
 export function argMaxFirst(arr, keyFn) {
   let best = null, bestVal = -Infinity;
@@ -56,25 +61,100 @@ export function firstName(name) {
 }
 
 /**
- * players: array of player ids (squad order).
- * caps/weights/locks: {playerId: value} maps.
- * minStart: minimum minutes any stint must run before a routine (non-forced)
- *   substitution may end it.
- * maxStint: longest a player may stay on in one stint before being forced
- *   off (0 = no limit).
+ * How often this position substitutes, in minutes.
+ *
+ * One player rotates off every `step` minutes, so a player sits out for
+ * (n − s) × step and plays for s × step. We pick the whole-minute step whose
+ * resulting break lands nearest the middle of the allowed window. If no whole
+ * step fits inside the window at all (e.g. 4 substitutes with a 3–3 break
+ * window, where breaks can only be multiples of 4), we take the closest
+ * achievable and let the caller report the miss.
+ */
+export function rotationStep(n, slots, minBreak, maxBreak) {
+  const benchCount = n - slots;
+  if (benchCount <= 0) return null; // nobody to rotate with
+
+  const lo = Math.max(1, Math.ceil(minBreak / benchCount));
+  const hi = Math.floor(maxBreak / benchCount);
+  const mid = (minBreak + maxBreak) / 2;
+
+  if (hi >= lo) {
+    let best = lo, bestDist = Infinity;
+    for (let step = lo; step <= hi; step++) {
+      const dist = Math.abs(benchCount * step - mid);
+      if (dist < bestDist) { bestDist = dist; best = step; }
+    }
+    return best;
+  }
+  return Math.max(1, Math.round(mid / benchCount));
+}
+
+/** What a position will actually do, for reporting back to the coach. */
+export function positionPlan(n, slots, minBreak, maxBreak) {
+  const step = rotationStep(n, slots, minBreak, maxBreak);
+  if (step === null) return { step: null, stint: null, breakLen: null, everyonePlays: true };
+  return {
+    step,
+    stint: slots * step,
+    breakLen: (n - slots) * step,
+    everyonePlays: false,
+  };
+}
+
+/**
+ * The rotation itself, built rather than discovered.
+ *
+ * Time is cut into windows of `step` minutes. At window k the players on the
+ * field are the s consecutive players starting at k (wrapping round), so each
+ * window retires exactly one player and brings on exactly one. Every player
+ * therefore gets the same stint (s × step) and the same break ((n − s) × step),
+ * and equal minutes, by construction — no fairness heuristic involved, and the
+ * on-field count is exactly right at every minute.
+ */
+function rollingWindow(free, slots, total, step, groupOffset) {
+  const n = free.length;
+  const out = {};
+  const open = {};
+  for (const p of free) { out[p] = []; open[p] = null; }
+
+  // No per-position time offset. Shifting a position's substitution clock
+  // knocks its cycle out of alignment with the match length, which costs the
+  // equal-minutes guarantee (a 6-minute spread in testing) and produced
+  // 1-minute stints at the whistle. Positions still rarely sub together
+  // because each one's cadence is derived from its own squad size.
+  const firstBoundary = step;
+  const windowAt = (m) => (m < firstBoundary ? 0 : 1 + Math.floor((m - firstBoundary) / step));
+
+  for (let m = 0; m < total; m++) {
+    const k = windowAt(m);
+    for (let i = 0; i < n; i++) {
+      const onNow = ((i - k) % n + n) % n < slots;
+      if (onNow && open[free[i]] === null) open[free[i]] = m;
+      if (!onNow && open[free[i]] !== null) {
+        out[free[i]].push([open[free[i]], m]);
+        open[free[i]] = null;
+      }
+    }
+  }
+  for (const p of free) {
+    if (open[p] !== null) out[p].push([open[p], total]);
+    out[p] = mergeSegs(out[p]);
+  }
+  return out;
+}
+
+/**
+ * players: player ids in squad order.
+ * caps: {playerId: maxTotalMinutes | null} — injury / load caps.
+ * pins: {playerId: [[start,end], ...]} — stints held exactly as given, so the
+ *   rest of the position is scheduled around them.
  * Returns {playerId: [[start,end], ...]}.
  */
-export function schedulePosition(players, slots, total, maxOff, targetOff, groupOffset,
-                                  caps, weights, locks, mode = "roll", minStart = 0,
-                                  maxStint = 0) {
+export function schedulePosition(players, slots, total, minBreak, maxBreak, groupOffset,
+                                  caps = {}, mode = "roll", pins = {}) {
   const n = players.length;
   const out = {};
   if (n === 0) return out;
-
-  if (n <= slots) {
-    for (const p of players) out[p] = [[0, total]];
-    return out;
-  }
 
   if (mode === "split") {
     const per = total / n;
@@ -86,167 +166,169 @@ export function schedulePosition(players, slots, total, maxOff, targetOff, group
     return out;
   }
 
-  const locked = players.filter((p) => locks[p]);
-  const rot = players.filter((p) => !locks[p]);
-  const rotSlots = slots - locked.length;
+  const isPinned = (p) => Object.prototype.hasOwnProperty.call(pins, p);
+  const pinnedIds = players.filter(isPinned);
+  const free = players.filter((p) => !isPinned(p));
 
-  for (const p of locked) out[p] = [[0, total]];
+  for (const p of pinnedIds) out[p] = mergeSegs((pins[p] || []).map((s) => s.slice()));
 
-  if (rotSlots <= 0) {
-    for (const p of rot) out[p] = [];
-    return out;
-  }
-  if (rot.length <= rotSlots) {
-    for (const p of rot) out[p] = [[0, total]];
-    return out;
-  }
-
-  const initBench = rot.length - rotSlots;
-  const W = Math.max(1, Math.min(Math.floor(maxOff / initBench), Math.max(1, targetOff)));
-
-  // A max stint shorter than the min stint is self-contradictory; the minimum
-  // wins so stints stay meaningful, pinning every stint to exactly minStart.
-  const stintCap = maxStint > 0 ? Math.max(maxStint, minStart) : 0;
-
-  let on = rot.slice(0, rotSlots);
-  let bench = rot.slice(rotSlots);
-  const active = new Set(rot);
-  const onTime = {}, offRun = {}, segOpen = {}, blocks = {};
-  for (const p of rot) {
-    onTime[p] = 0;
-    offRun[p] = 0;
-    segOpen[p] = on.includes(p) ? 0 : null;
-    blocks[p] = [];
-  }
-
-  const underCap = (p) => caps[p] == null || onTime[p] < caps[p];
-
-  const close = (p, m) => {
-    if (segOpen[p] !== null) {
-      blocks[p].push([segOpen[p], m]);
-      segOpen[p] = null;
+  // How many slots the pinned players already occupy, minute by minute.
+  const pinnedCount = new Array(total + 1).fill(0);
+  for (const p of pinnedIds) {
+    for (const [s, e] of out[p]) {
+      for (let m = Math.max(0, s); m < Math.min(e, total); m++) pinnedCount[m] += 1;
     }
-  };
+  }
+
+  if (!free.length) return out;
+
+  const baseSlots = Math.max(0, slots - pinnedCount[0]);
+  if (baseSlots <= 0) {
+    for (const p of free) out[p] = [];
+    return out;
+  }
+  if (free.length <= baseSlots) {
+    // Not enough spare players to rotate — they simply play the whole match.
+    for (const p of free) out[p] = [[0, total]];
+    return out;
+  }
+
+  const step = rotationStep(free.length, baseSlots, minBreak, maxBreak);
+
+  // When the pinned players hold a steady number of slots and nobody has a
+  // minutes cap, the rotation is fully determined — build it directly rather
+  // than letting a minute-by-minute greedy rediscover it (which drifts at the
+  // start and end of the match). The greedy below handles the awkward cases:
+  // pins that come and go mid-match, and injury caps that retire a player.
+  const residualSteady = pinnedCount.slice(0, total).every((c) => slots - c === baseSlots);
+  const anyCaps = free.some((p) => caps[p] != null);
+  if (step && residualSteady && !anyCaps) {
+    const rotated = rollingWindow(free, baseSlots, total, step, groupOffset);
+    for (const p of free) out[p] = rotated[p];
+    return out;
+  }
+
+  const st = {};
+  for (const p of free) {
+    st[p] = { on: false, segOpen: null, totalOn: 0, offSince: 0, played: false, retired: false };
+  }
+  let onNow = [];
+  const blocks = {};
+  for (const p of free) blocks[p] = [];
+
+  const stintLen = (p, m) => (st[p].on ? m - st[p].segOpen : 0);
+  const breakLen = (p, m) => m - st[p].offSince;
+  const underCap = (p) => caps[p] == null || st[p].totalOn < caps[p];
+
   const putOn = (p, m) => {
-    on.push(p);
-    bench.splice(bench.indexOf(p), 1);
-    offRun[p] = 0;
-    segOpen[p] = m;
+    st[p].on = true;
+    st[p].segOpen = m;
+    st[p].played = true;
+    onNow.push(p);
   };
-  const takeOff = (p, m, retire = false) => {
-    on.splice(on.indexOf(p), 1);
-    bench.push(p);
-    close(p, m);
-    benchedThisMinute.add(p);
-    if (retire) active.delete(p);
-  };
-  // Anyone benched earlier in the current minute. Without this a player taken
-  // off by one rule is immediately eligible to come back on under another in
-  // the same minute — they never actually leave the field, and mergeSegs
-  // correctly fuses the two segments into one over-long stint.
-  let benchedThisMinute = new Set();
-
-  const comer = () => {
-    const pool = bench.filter((q) => active.has(q) && underCap(q) && !benchedThisMinute.has(q));
-    return pool.length ? argMaxFirst(pool, (q) => offRun[q]) : null;
-  };
-  // No stint — the opening kickoff stint or any later one — may be cut short by a
-  // routine swap before it reaches minStart minutes. Measured against the current
-  // stint's own start (segOpen), not cumulative on-time, so it applies uniformly
-  // every time a player comes on, not just at kickoff.
-  const stintElapsed = (q, minute) => (segOpen[q] === null ? Infinity : minute - segOpen[q]);
-  const isProtected = (q, minute) => stintElapsed(q, minute) < minStart;
-  const leaverSoft = (minute) => {
-    if (!on.length) return null;
-    const eligible = on.filter((q) => !isProtected(q, minute));
-    return eligible.length ? argMaxFirst(eligible, (q) => onTime[q] / (weights[q] ?? 1.0)) : null;
-  };
-  // Forced return enforces the HARD max-bench guarantee, so it may override
-  // the minimum-stint protection as a last resort if nobody else qualifies.
-  const leaverHard = (minute) => {
-    if (!on.length) return null;
-    const eligible = on.filter((q) => !isProtected(q, minute));
-    const pool = eligible.length ? eligible : on;
-    return argMaxFirst(pool, (q) => onTime[q]);
+  const takeOff = (p, m) => {
+    st[p].on = false;
+    if (st[p].segOpen !== null && m > st[p].segOpen) blocks[p].push([st[p].segOpen, m]);
+    st[p].segOpen = null;
+    st[p].offSince = m;
+    onNow.splice(onNow.indexOf(p), 1);
   };
 
-  for (let minute = 0; minute <= total; minute++) {
-    benchedThisMinute = new Set();
-    // 1) cap-outs: anyone who hit their max retires; replacement comes on.
-    for (const p of on.filter((q) => caps[q] != null && onTime[q] >= caps[q])) {
-      const rep = comer();
-      takeOff(p, minute, true);
-      if (rep) {
-        putOn(rep, minute);
-      } else {
-        const fbPool = bench.filter((q) => q !== p);
-        const fb = fbPool.length ? argMinFirst(fbPool, (q) => onTime[q]) : null;
-        if (fb != null) {
-          active.add(fb);
-          putOn(fb, minute);
-        }
+  // A player who has not been on yet needs no recovery — the minimum break
+  // protects someone who just came off, not someone still waiting for a first
+  // run. Without this the opening substitution could never happen on cadence.
+  const restedEnough = (p, m) => !st[p].played || breakLen(p, m) >= minBreak;
+
+  const candidates = (m, relaxed) =>
+    free.filter((p) => !st[p].on && !st[p].retired && underCap(p) && (relaxed || restedEnough(p, m)));
+
+  // Equal minutes is the goal, so the player with the least time on comes on
+  // and the player with the most goes off; break and stint length break ties.
+  const pickComer = (m, relaxed = false) => {
+    const pool = candidates(m, relaxed);
+    if (!pool.length) return null;
+    return argMinFirst(pool, (p) => st[p].totalOn * 1000 - breakLen(p, m));
+  };
+  const pickLeaver = (m, minStint = 0) => {
+    const pool = onNow.filter((p) => stintLen(p, m) >= minStint);
+    if (!pool.length) return null;
+    return argMaxFirst(pool, (p) => st[p].totalOn * 1000 + stintLen(p, m));
+  };
+
+  for (let m = 0; m <= total; m++) {
+    const pinnedNow = pinnedCount[Math.min(m, Math.max(0, total - 1))] || 0;
+    const need = Math.max(0, slots - pinnedNow);
+
+    // 1) Injury caps retire a player outright.
+    for (const p of [...onNow]) {
+      if (caps[p] != null && st[p].totalOn >= caps[p]) {
+        takeOff(p, m);
+        st[p].retired = true;
       }
     }
-    // 2) forced return: about to breach max bench time -> comes on now.
-    if (minute > 0) {
-      for (const p of bench.filter((q) => active.has(q) && offRun[q] >= maxOff)) {
-        const lv = leaverHard(minute);
-        if (lv != null) {
-          takeOff(lv, minute);
-          putOn(p, minute);
-        }
+
+    // 2) Nobody may sit longer than the maximum break.
+    if (m > 0 && m < total) {
+      const overdue = free.filter(
+        (p) => !st[p].on && !st[p].retired && st[p].played && underCap(p) && breakLen(p, m) >= maxBreak
+      );
+      for (const p of overdue) {
+        if (onNow.length < need) { putOn(p, m); continue; }
+        const lv = pickLeaver(m);
+        if (lv != null) { takeOff(lv, m); putOn(p, m); }
       }
     }
-    // 2b) forced exit: anyone who has been on for the max stint comes off now.
-    // Needs a replacement to keep the on-field count exact, and stops near
-    // full-time so it can't manufacture a stint shorter than minStart.
-    if (stintCap > 0 && minute > 0 && minute < total && total - minute >= minStart) {
-      for (const p of on.filter((q) => stintElapsed(q, minute) >= stintCap)) {
-        const rep = comer(); // already excludes anyone benched this minute
-        if (rep != null) {
-          takeOff(p, minute);
-          putOn(rep, minute);
-        }
-      }
+
+    // 3) Hold the on-field count exactly, including when a pin starts or ends.
+    while (onNow.length > need) {
+      const lv = pickLeaver(m);
+      if (lv == null) break;
+      takeOff(lv, m);
     }
-    // 3) routine wave swap at this group's staggered window. Skipped once too
-    // little match time remains for an incoming player to get a full minStart stint.
-    if (minute > 0 && minute < total && (minute - groupOffset) % W === 0 && total - minute >= minStart) {
-      const cm = comer();
+    while (onNow.length < need) {
+      const cm = pickComer(m) ?? pickComer(m, true); // relax rest before leaving a slot empty
+      if (cm == null) break;
+      putOn(cm, m);
+    }
+
+    // 4) The rotation itself: one player off, one on, every `step` minutes.
+    //    Staggered per position so the whole team doesn't change at once.
+    if (step && m > 0 && m < total && (m - groupOffset) % step === 0) {
+      const cm = pickComer(m);
       if (cm != null) {
-        const lv = leaverSoft(minute);
-        if (lv != null && onTime[lv] >= onTime[cm]) {
-          takeOff(lv, minute);
-          putOn(cm, minute);
+        const lv = pickLeaver(m, step); // never cut a stint shorter than one cadence
+        if (lv != null && lv !== cm && st[lv].totalOn >= st[cm].totalOn) {
+          takeOff(lv, m);
+          putOn(cm, m);
         }
       }
     }
-    // 4) accrue the minute.
-    if (minute < total) {
-      for (const p of on) onTime[p] += 1;
-      for (const p of bench) if (active.has(p)) offRun[p] += 1;
+
+    if (m < total) {
+      for (const p of onNow) st[p].totalOn += 1;
     }
   }
 
-  for (const p of on) close(p, total);
-
-  const res = {};
-  for (const p of locked) res[p] = [[0, total]];
-  for (const p of rot) res[p] = mergeSegs(blocks[p]);
-  return res;
+  for (const p of [...onNow]) {
+    if (st[p].segOpen !== null && total > st[p].segOpen) blocks[p].push([st[p].segOpen, total]);
+  }
+  for (const p of free) out[p] = mergeSegs(blocks[p]);
+  return out;
 }
 
 /**
  * squad: [{id, name, number}]
  * assign: {playerId: positionName}
  * positions: [{name, onField, mode}]
- * Returns {playerId: [[start,end], ...]}
+ * locks: {playerId: bool} — iron players, pinned to the whole match.
+ * pins: {playerId: [[s,e], ...]} — stints held through a regenerate.
  */
-export function buildSchedule(squad, assign, positions, total, maxOff, targetOff,
-                               caps, weights, locks, minStart = 0, maxStint = 0) {
+export function buildSchedule(squad, assign, positions, total, minBreak, maxBreak,
+                               caps = {}, locks = {}, pins = {}) {
   const schedule = {};
   for (const p of squad) schedule[p.id] = [];
   let rollingIdx = 0;
+
   for (const pos of positions) {
     const members = squad.filter((p) => assign[p.id] === pos.name);
     if (!members.length) continue;
@@ -256,23 +338,26 @@ export function buildSchedule(squad, assign, positions, total, maxOff, targetOff
       offset = rollingIdx;
       rollingIdx += 1;
     }
+
+    // An iron player is just a pin covering the whole match.
+    const posPins = {};
+    for (const p of members) {
+      if (pins[p.id] && pins[p.id].length) posPins[p.id] = pins[p.id];
+      else if (locks[p.id]) posPins[p.id] = [[0, total]];
+    }
+
     const res = schedulePosition(
       members.map((p) => p.id),
       Number(pos.onField),
       total,
-      maxOff,
-      targetOff,
+      minBreak,
+      maxBreak,
       offset,
       caps,
-      weights,
-      locks,
       mode,
-      minStart,
-      maxStint
+      posPins
     );
-    for (const [pid, segs] of Object.entries(res)) {
-      schedule[pid] = segs;
-    }
+    for (const [pid, segs] of Object.entries(res)) schedule[pid] = segs;
   }
   return schedule;
 }

@@ -41,10 +41,11 @@ function defaultState() {
     nextId: 1,
     squad: [],
     positions: DEFAULT_POSITIONS.map((p) => ({ ...p })),
-    match: { periods: 4, perLen: 15, maxOff: 6, targetOff: 3, minStart: 3, maxStint: 0 },
-    roster: {}, // playerId -> {available, position, maxMin, weight, lock}
+    match: { periods: 4, perLen: 15, minBreak: 3, maxBreak: 6 },
+    roster: {}, // playerId -> {available, position, maxMin, lock, starter}
     schedule: null, // playerId -> [[s,e],...]
     assign: null, // playerId -> positionName
+    pins: {}, // playerId -> [[s,e],...] held through a regenerate
     scheduleEdited: false, // true once a stint has been dragged or hand-edited
   };
 }
@@ -58,6 +59,20 @@ function load() {
     const parsed = JSON.parse(raw);
     const merged = { ...defaultState(), ...parsed };
     merged.match = { ...defaultState().match, ...(parsed.match || {}) };
+
+    // Stint caps were replaced by a break window, which the rotation is solved
+    // from. Carry an older saved match over: its "max bench" was already the
+    // longest allowed break.
+    const old = parsed.match || {};
+    if (old.maxBreak === undefined && typeof old.maxOff === "number") merged.match.maxBreak = old.maxOff;
+    if (old.minBreak === undefined && typeof old.targetOff === "number") {
+      merged.match.minBreak = Math.min(old.targetOff, merged.match.maxBreak);
+    }
+    delete merged.match.maxOff;
+    delete merged.match.targetOff;
+    delete merged.match.minStart;
+    delete merged.match.maxStint;
+
     return merged;
   } catch (e) {
     console.warn("Failed to load saved state, starting fresh.", e);

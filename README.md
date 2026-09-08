@@ -20,9 +20,6 @@ it a true "clone the repo and open it" static site.
   (defaults: GK, Defence, Midfield, Attack), each position set to `roll`
   (frequent rotating subs) or `split` (evenly divided fixed blocks, e.g. two
   keepers each playing a half).
-- **Priority weighting** — give any player a numeric weight (1 = normal,
-  higher = a bigger share of playing time) that influences routine
-  substitutions only.
 - **Injury / availability caps** — mark a player unavailable, or give them a
   hard cap on total minutes; once they hit it they retire from the rotation
   for the rest of the match.
@@ -32,11 +29,10 @@ it a true "clone the repo and open it" static site.
   position; a live summary flags if you've ticked too few or too many for a
   position's slot count. Unticked slots auto-fill from squad order.
 - **Auto-substitution scheduling** — generate a full-game sub sheet from
-  periods, minutes/period, max bench time, target break time, a minimum
-  stint length (no routine sub — at kickoff, mid-match, or near full-time —
-  creates a stint shorter than this; 3 minutes by default) and an optional
-  maximum stint length (forces a sub once a player has been on that long;
-  0 = no limit).
+  periods, minutes/period and a break window (min/max). Stint length is not
+  set directly: it is solved from the break and the squad size, so the two
+  can never contradict each other. Everyone in a position gets the same
+  stint, the same break and equal minutes.
 - **Output view** — an interactive Gantt-style timeline of who's on/off and
   when (hover or tap a bar for that stint's exact minutes, or a player's name
   for their total minutes/stint count), a minutes-played summary, and a
@@ -47,6 +43,9 @@ it a true "clone the repo and open it" static site.
   touch. Overlapping stints for one player merge into one. Hand edits can
   legitimately break the on-field count, so the sheet reports that rather
   than silently correcting it.
+- **Pinning** — pin a player on the sub sheet and a regenerate keeps their
+  stints exactly, scheduling the rest of the position around them. This is
+  how you give someone more (or less) than the even share.
 - **Edit protection** — once a sheet has been hand-adjusted, regenerating
   asks before discarding the changes.
 - **Test squad** — the 16-player sample squad is spread across your current
@@ -56,60 +55,57 @@ it a true "clone the repo and open it" static site.
 
 ## Algorithm
 
-This is a faithful port of the original Streamlit app's scheduler
-(`js/scheduler.js`), not a reimplementation. The key invariants carried over
-exactly:
+The rotation is **solved, not searched**. A position's arithmetic already fixes
+the relationship between a stint and a break: with `n` players and `s` on the
+field, each player is on `s/n` of the match, so
 
-- **Max bench time is a hard guarantee** — enforced by a forced-return step
-  that ignores priority weight entirely.
-- **Priority weight** only ever influences *which* on-field player is
-  substituted during routine rotation waves — it can never block a forced
-  return or an injury cap-out.
-- **Injury cap** is a hard ceiling: a capped-out player retires permanently,
-  with an emergency fallback so a position slot is never left empty even if
-  every eligible substitute is unavailable.
-- **Lock** removes a player from the rotation maths completely (not just "low
-  priority for subbing").
-- **Split-mode positions** (e.g. keepers) ignore weight/cap/lock and simply
-  divide the match into even blocks — this is inherited as-is from the
-  source app, so an injury cap on a split-mode player is currently a no-op.
-  Worth knowing if you use `split` mode for anything other than keepers.
-- **Minimum stint length** is a new addition on top of the source algorithm:
-  no routine substitution wave will cut a player's current stint short before
-  it reaches the configured minimum (measured from when they came on, so it
-  applies every time a player is subbed on, not just at kickoff), and a wave
-  won't bring a new player on at all once too little match time remains for
-  them to get a full minimum-length stint. It never overrides the hard
-  max-bench-time guarantee — if a coach sets `max bench` below the minimum
-  stint length, the bench-time guarantee wins and a player can be subbed
-  early to keep someone else from breaching their hard cap.
-- **Maximum stint length** (optional) forces a player off once they have been
-  on that long, taking the longest-benched substitute in return. Unlike max
-  bench time it is *best-effort, not a hard guarantee*: a player can only come
-  off if someone is free to replace them, so a thin bench delays the swap. In
-  a sweep of 180 position configurations the overrun never exceeded 2 minutes.
-  The sheet reports any overrun explicitly rather than leaving it to be
-  spotted by eye. A max stint below the min stint is self-contradictory, so
-  the minimum wins.
+```
+break = stint x (n - s) / s
+```
 
-**No player may be substituted off and back on within the same minute.** Each
-rule (cap-out, forced return, max-stint exit, routine wave) runs in turn
-within a minute, and without this guard one rule could bench a player and the
-next could immediately pick them as the only available replacement. They never
-actually leave the field, and `mergeSegs` correctly fuses the two touching
-segments into one — which surfaced as stints running to 21 minutes under a
-9-minute cap, and as identically-configured positions behaving differently
-depending on whether their stagger offset happened to land a wave on the same
-minute as a forced exit.
-- **Starting lineup** is also new: the source algorithm always picked the
-  starting XI implicitly (first N players in squad order per position).
-  Ticking "Start on field" for specific players now controls this directly —
-  ticked players fill the position's starting slots first (in squad order
-  among themselves); any leftover slots still auto-fill from squad order.
+Setting a stint length and a break length independently therefore
+over-determines the system — which is exactly what the earlier version did, and
+why its caps fought each other and produced 21-minute stints under a 9-minute
+cap. Only the **break** is configured now (it is the injury-relevant one), and
+the substitution cadence is solved from it; stint length falls out.
 
-One intentional behavior change from the source: the original only offered
-three fixed priority tiers (Normal/More/Lots → 1×/2×/4×). This version lets
-you enter any numeric weight.
+Time is then cut into windows of that cadence. In each window the players on the
+field are the `s` consecutive players in the rotation order, wrapping round, so
+every window takes exactly one player off and brings exactly one on. The
+consequences are structural rather than the result of a fairness heuristic:
+
+- every player in a position gets the **same stint length and the same break**;
+- **equal minutes**, exact when the match length divides by the cycle and within
+  a few minutes otherwise (the remainder has to land somewhere);
+- the **on-field count is exact** at every minute;
+- **one substitution at a time**, never a mass change.
+
+Positions are not given a staggered substitution clock. Offsetting one knocks
+its cycle out of alignment with the match length, which measurably cost the
+equal-minutes guarantee and produced 1-minute stints at the whistle. Positions
+still rarely change together, because each derives its own cadence from its own
+squad size.
+
+Two things follow from the arithmetic and are worth knowing:
+
+- **The opening stints ramp up.** At kickoff the players on the field are spread
+  across the rotation, so the first player off has had one cadence, the next
+  two, and so on until the cycle settles. Any staggered rotation has this; the
+  alternative is substituting the whole line at once.
+- **Some break windows are unreachable.** With 8 substitutes for 4 places,
+  breaks can only be multiples of 8 minutes, so a 3-6 minute window cannot be
+  hit. The sheet reports the closest achievable fit rather than missing quietly.
+
+Carried over from the original Streamlit app: **injury caps** (a hard ceiling on
+total minutes, after which a player retires for the match), **split-mode
+positions** (keepers taking a half each, outside the rotation rules), and the
+guarantee that a position slot is never left empty.
+
+**Pinning** replaces the old priority weighting. Drag a player's stints to what
+you want and pin them, and a regenerate holds those stints exactly while
+scheduling everyone else around them. That covers "give this player more time"
+without a weighting dial that could argue with the break rules. An "iron player"
+lock is just a pin covering the whole match.
 
 ## Position colours
 
