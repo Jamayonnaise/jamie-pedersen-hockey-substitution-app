@@ -1,6 +1,6 @@
-import { getState, updateState, newId, PALETTE, PALETTE_OTHER, TEST_SQUAD_NAMES } from "./storage.js?v=14";
-import { buildSchedule, subEvents, onFieldCounts, mergeSegs, qClock, firstName, positionPlan } from "./scheduler.js?v=14";
-import { downloadCsv } from "./export.js?v=14";
+import { getState, updateState, newId, PALETTE, PALETTE_OTHER, TEST_SQUAD_NAMES } from "./storage.js?v=15";
+import { buildSchedule, subEvents, onFieldCounts, mergeSegs, qClock, firstName, positionPlan } from "./scheduler.js?v=15";
+import { downloadCsv } from "./export.js?v=15";
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));

@@ -135,7 +135,13 @@ function rollingWindow(free, slots, total, step, minStint) {
   //  - substitutions stop once fewer than minStint minutes remain, so nobody
   //    comes on for a token spell before the whistle. Whoever is on at that
   //    point plays the match out.
-  const firstBoundary = Math.max(step, minStint);
+  // Put the opening boundary on the cadence grid, so the ramp-up stints are
+  // multiples of the cadence (4, 6, 8, 10) rather than offset from it
+  // (3, 5, 7, 9). Opening on a whole stint instead would make every stint at
+  // least the steady length, but it freezes so much of the match at each end
+  // that equal minutes collapses — measured as a 16-minute spread on a
+  // 5-player defence that was previously exactly level.
+  const firstBoundary = Math.max(step, Math.ceil(minStint / step) * step);
   const lastBoundary = total - minStint;
   const maxWindow =
     firstBoundary > lastBoundary ? 0 : 1 + Math.floor((lastBoundary - firstBoundary) / step);

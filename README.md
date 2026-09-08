@@ -103,9 +103,18 @@ slower cadence satisfies both.
 Two things follow from the arithmetic and are worth knowing:
 
 - **The opening stints ramp up.** After the first substitution the players on the
-  field are spread across the rotation, so stints lengthen from the minimum up to
-  the full one before the cycle settles. Any staggered rotation has this; the
-  alternative is substituting the whole line at once.
+  field are spread across the rotation, so stints lengthen up to the full one
+  before the cycle settles. This is unavoidable: staggered substitutions mean the
+  starters cannot all end their first stint together, and the only alternative is
+  changing the whole line at once. The ramp is placed on the cadence grid so those
+  stints are multiples of the substitution interval (4, 6, 8, 10) rather than
+  offset from it (3, 5, 7, 9). Across the sweep a median of **84% of all stints
+  are exactly the steady length**.
+
+  Opening on a *whole stint* instead would make every stint at least the steady
+  length, but it freezes so much of the match at each end that equal minutes
+  collapses — a 5-player defence that was exactly level went to a 16-minute
+  spread. Equality won.
 - **Some combinations are unreachable.** With 8 substitutes for 4 places, breaks
   can only be multiples of 8 minutes, so a 3-6 minute window cannot be hit; and 6
   players sharing 1 place are each on a sixth of the match, which pins the stint
