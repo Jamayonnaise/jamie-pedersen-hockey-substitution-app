@@ -86,15 +86,36 @@ equal-minutes guarantee and produced 1-minute stints at the whistle. Positions
 still rarely change together, because each derives its own cadence from its own
 squad size.
 
+**No stint is ever shorter than the minimum break**, at either end of the match:
+the first substitution waits until the minimum has elapsed, so a starter cannot
+be pulled after two minutes as the rotation ramps up; and substitutions stop once
+less than that remains, so nobody comes on for a token spell before the whistle.
+That second rule hands the closing minutes to whoever happens to be on, so those
+minutes are given to whoever is furthest behind — without it the minutes spread
+reached 10 minutes in testing.
+
+The minimum also constrains the cadence itself. The stint has to clear it as well
+as the break, which is why the solver takes
+`step >= max(minBreak / bench, minBreak / places)`: five players sharing two
+places with a 3-minute break would otherwise derive a 2-minute stint, when a
+slower cadence satisfies both.
+
 Two things follow from the arithmetic and are worth knowing:
 
-- **The opening stints ramp up.** At kickoff the players on the field are spread
-  across the rotation, so the first player off has had one cadence, the next
-  two, and so on until the cycle settles. Any staggered rotation has this; the
+- **The opening stints ramp up.** After the first substitution the players on the
+  field are spread across the rotation, so stints lengthen from the minimum up to
+  the full one before the cycle settles. Any staggered rotation has this; the
   alternative is substituting the whole line at once.
-- **Some break windows are unreachable.** With 8 substitutes for 4 places,
-  breaks can only be multiples of 8 minutes, so a 3-6 minute window cannot be
-  hit. The sheet reports the closest achievable fit rather than missing quietly.
+- **Some combinations are unreachable.** With 8 substitutes for 4 places, breaks
+  can only be multiples of 8 minutes, so a 3-6 minute window cannot be hit; and 6
+  players sharing 1 place are each on a sixth of the match, which pins the stint
+  well below any sensible break. The sheet names the position and explains which
+  way to adjust rather than missing quietly.
+
+Verified over 476 feasible position shapes (match lengths 40-70, break windows
+from 2-5 to 5-10, 1-5 places, benches up to 7 deep): no stint under the minimum,
+no break outside the window, the on-field count exact everywhere, and a median
+minutes spread of 4.
 
 Carried over from the original Streamlit app: **injury caps** (a hard ceiling on
 total minutes, after which a player retires for the match), **split-mode

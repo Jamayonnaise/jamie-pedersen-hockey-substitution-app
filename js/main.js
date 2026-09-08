@@ -1,6 +1,6 @@
-import { getState, updateState, newId, PALETTE, PALETTE_OTHER, TEST_SQUAD_NAMES } from "./storage.js?v=13";
-import { buildSchedule, subEvents, onFieldCounts, mergeSegs, qClock, firstName, positionPlan } from "./scheduler.js?v=13";
-import { downloadCsv } from "./export.js?v=13";
+import { getState, updateState, newId, PALETTE, PALETTE_OTHER, TEST_SQUAD_NAMES } from "./storage.js?v=14";
+import { buildSchedule, subEvents, onFieldCounts, mergeSegs, qClock, firstName, positionPlan } from "./scheduler.js?v=14";
+import { downloadCsv } from "./export.js?v=14";
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
@@ -742,14 +742,25 @@ function renderStintNote(schedule) {
 
     const plan = positionPlan(free, slots, minBreak, maxBreak);
     if (plan.breakLen == null) continue;
-    if (plan.breakLen < minBreak || plan.breakLen > maxBreak) {
-      lines.push(
-        `${pos.name}: ${free} players for ${slots} place${slots === 1 ? "" : "s"} means breaks ` +
-        `can only come in steps of ${free - slots} min, so the closest fit is a ${plan.breakLen}' ` +
-        `break with ${plan.stint}' stints — outside your ${minBreak}–${maxBreak}' window. ` +
-        `Adjust the window or the number of players in this position.`
-      );
-    }
+
+    const breakOutside = plan.breakLen < minBreak || plan.breakLen > maxBreak;
+    // A stint shorter than a break can't be avoided when the bench is large
+    // relative to the field: with n players sharing s places, everyone is on
+    // s/n of the match, so the stint is pinned to break x s/(n − s).
+    const stintTooShort = plan.stint < minBreak;
+    if (!breakOutside && !stintTooShort) continue;
+
+    const shape = `${free} players for ${slots} place${slots === 1 ? "" : "s"}`;
+    const got = `a ${plan.breakLen}' break with ${plan.stint}' stints`;
+    lines.push(
+      breakOutside
+        ? `${pos.name}: ${shape} means breaks can only come in steps of ${free - slots} min, ` +
+          `so the closest fit is ${got} — outside your ${minBreak}–${maxBreak}' window. ` +
+          `Adjust the window or the number of players in this position.`
+        : `${pos.name}: ${shape} puts everyone on ${slots}/${free} of the match, which forces ` +
+          `${got} — stints shorter than your ${minBreak}' minimum. Raise the max break, or move ` +
+          `a player off this position, to lengthen them.`
+    );
   }
 
   if (lines.length) {

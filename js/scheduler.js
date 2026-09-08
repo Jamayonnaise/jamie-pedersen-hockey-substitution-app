@@ -74,7 +74,13 @@ export function rotationStep(n, slots, minBreak, maxBreak) {
   const benchCount = n - slots;
   if (benchCount <= 0) return null; // nobody to rotate with
 
-  const lo = Math.max(1, Math.ceil(minBreak / benchCount));
+  // Two floors on the cadence:
+  //   break = benchCount x step  >= minBreak
+  //   stint = slots x step       >= minBreak   (no stint shorter than a break)
+  // The second matters where the bench is large relative to the field: 5
+  // players for 2 places with a 3-minute break would otherwise derive a
+  // 2-minute stint, when a step of 2 satisfies both.
+  const lo = Math.max(1, Math.ceil(minBreak / benchCount), Math.ceil(minBreak / slots));
   const hi = Math.floor(maxBreak / benchCount);
   const mid = (minBreak + maxBreak) / 2;
 
@@ -111,7 +117,7 @@ export function positionPlan(n, slots, minBreak, maxBreak) {
  * and equal minutes, by construction — no fairness heuristic involved, and the
  * on-field count is exactly right at every minute.
  */
-function rollingWindow(free, slots, total, step, groupOffset) {
+function rollingWindow(free, slots, total, step, minStint) {
   const n = free.length;
   const out = {};
   const open = {};
@@ -122,8 +128,19 @@ function rollingWindow(free, slots, total, step, groupOffset) {
   // equal-minutes guarantee (a 6-minute spread in testing) and produced
   // 1-minute stints at the whistle. Positions still rarely sub together
   // because each one's cadence is derived from its own squad size.
-  const firstBoundary = step;
-  const windowAt = (m) => (m < firstBoundary ? 0 : 1 + Math.floor((m - firstBoundary) / step));
+  //
+  // No stint may be shorter than minStint, at either end of the match:
+  //  - the first substitution waits until minStint, so a starter can't be
+  //    pulled after a couple of minutes as the rotation ramps up;
+  //  - substitutions stop once fewer than minStint minutes remain, so nobody
+  //    comes on for a token spell before the whistle. Whoever is on at that
+  //    point plays the match out.
+  const firstBoundary = Math.max(step, minStint);
+  const lastBoundary = total - minStint;
+  const maxWindow =
+    firstBoundary > lastBoundary ? 0 : 1 + Math.floor((lastBoundary - firstBoundary) / step);
+  const windowAt = (m) =>
+    m < firstBoundary ? 0 : Math.min(maxWindow, 1 + Math.floor((m - firstBoundary) / step));
 
   for (let m = 0; m < total; m++) {
     const k = windowAt(m);
@@ -140,6 +157,49 @@ function rollingWindow(free, slots, total, step, groupOffset) {
     if (open[p] !== null) out[p].push([open[p], total]);
     out[p] = mergeSegs(out[p]);
   }
+
+  // The closing stretch has no substitutions in it (that is what keeps the last
+  // stint from being a token two minutes), so whoever happens to be on collects
+  // those minutes for free — which showed up as a 10-minute spread. It is the
+  // one stretch we can assign freely, so give it to whoever is furthest behind.
+  const tailStart = maxWindow > 0 ? firstBoundary + (maxWindow - 1) * step : 0;
+  if (tailStart > 0 && tailStart < total) {
+    const upTo = (p) =>
+      out[p].reduce((sum, [s, e]) => sum + Math.max(0, Math.min(e, tailStart) - s), 0);
+    const onAtTail = (p) => out[p].some(([s, e]) => s <= tailStart && e > tailStart);
+    // Coming on for the tail is only fair if they have actually had their break.
+    const restedBy = (p) => {
+      const last = out[p].filter(([, e]) => e <= tailStart).pop();
+      return !last || tailStart - last[1] >= minStint;
+    };
+
+    // Anyone who came on shortly before the tail has to stay, or dropping them
+    // here would leave them with the very short stint this is meant to prevent.
+    const stintStart = (p) => (out[p].find(([s, e]) => s <= tailStart && e > tailStart) || [])[0];
+    const mustKeep = free.filter((p) => onAtTail(p) && tailStart - stintStart(p) < minStint);
+
+    const eligible = free.filter(
+      (p) => !mustKeep.includes(p) && (onAtTail(p) || restedBy(p))
+    );
+    const chosen = mustKeep.concat(
+      eligible
+        .slice()
+        .sort((a, b) => upTo(a) - upTo(b) || free.indexOf(a) - free.indexOf(b))
+        .slice(0, slots - mustKeep.length)
+    );
+
+    if (mustKeep.length <= slots && chosen.length === slots) {
+      const keep = new Set(chosen);
+      for (const p of free) {
+        const trimmed = out[p]
+          .map(([s, e]) => [s, Math.min(e, tailStart)])
+          .filter(([s, e]) => e > s);
+        if (keep.has(p)) trimmed.push([tailStart, total]);
+        out[p] = mergeSegs(trimmed);
+      }
+    }
+  }
+
   return out;
 }
 
@@ -203,7 +263,7 @@ export function schedulePosition(players, slots, total, minBreak, maxBreak, grou
   const residualSteady = pinnedCount.slice(0, total).every((c) => slots - c === baseSlots);
   const anyCaps = free.some((p) => caps[p] != null);
   if (step && residualSteady && !anyCaps) {
-    const rotated = rollingWindow(free, baseSlots, total, step, groupOffset);
+    const rotated = rollingWindow(free, baseSlots, total, step, minBreak);
     for (const p of free) out[p] = rotated[p];
     return out;
   }
@@ -292,11 +352,12 @@ export function schedulePosition(players, slots, total, minBreak, maxBreak, grou
     }
 
     // 4) The rotation itself: one player off, one on, every `step` minutes.
-    //    Staggered per position so the whole team doesn't change at once.
-    if (step && m > 0 && m < total && (m - groupOffset) % step === 0) {
+    //    Held back near full-time so nobody comes on for a token spell.
+    if (step && m > 0 && m < total && m % step === 0 && total - m >= minBreak) {
       const cm = pickComer(m);
       if (cm != null) {
-        const lv = pickLeaver(m, step); // never cut a stint shorter than one cadence
+        // No stint shorter than a break, at either end of the match.
+        const lv = pickLeaver(m, Math.max(step, minBreak));
         if (lv != null && lv !== cm && st[lv].totalOn >= st[cm].totalOn) {
           takeOff(lv, m);
           putOn(cm, m);
